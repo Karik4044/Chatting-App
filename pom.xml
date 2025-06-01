@@ -16,6 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jakartaee.version>10.0.0</jakartaee.version>
         <hibernate.version>6.5.0.Final</hibernate.version> <mysql.connector.version>8.0.33</mysql.connector.version>
+        <tomcat.version>11.0.7</tomcat.version> <!-- Added tomcat.version property -->
     </properties>
 
     <dependencies>
@@ -65,6 +66,13 @@
             <artifactId>junit</artifactId>
             <version>4.13.2</version>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.tomcat</groupId>
+            <artifactId>tomcat-catalina</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
