@@ -1,128 +1,214 @@
 package com.example.chat.TCP.Server;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import com.example.chat.DAO.MessageDAO;
+import com.example.chat.DAO.UserDAO;
+import com.example.chat.Entity.Message;
+import com.example.chat.Entity.User;
+import org.mindrot.jbcrypt.BCrypt;
+
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class TCPServer implements Runnable {
-
-    private ArrayList<ConnectionHandler> connections; // Danh sách các kết nối đến client
-    private ServerSocket serverSocket; // Biến để lưu trữ ServerSocket
-    public boolean done;
+    private final List<ConnectionHandler> connections = new CopyOnWriteArrayList<>();
+    private ServerSocket serverSocket;
+    private boolean done = false;
     private ExecutorService pool;
-
-    public TCPServer() {
-        connections = new ArrayList<>(); // Khởi tạo danh sách kết nối
-        done = false; // Biến done để kiểm soát việc dừng server
-    }
 
     @Override
     public void run() {
         try {
-            ServerSocket serverSocket = new ServerSocket(8080); // Tạo ServerSocket lắng nghe cổng 8080
-            pool = Executors.newCachedThreadPool(); // Tạo một ExecutorService để quản lý các luồng kết nối
+            serverSocket = new ServerSocket(8080);
+            pool = Executors.newCachedThreadPool();
+            System.out.println("TCP Server started on port 8080");
             while (!done) {
-                Socket clientSocket = serverSocket.accept(); // Chấp nhận kết nối từ client
-                ConnectionHandler connectionHandler = new ConnectionHandler(clientSocket); // Tạo một ConnectionHandler cho kết nối này
-                connections.add(connectionHandler);
-                pool.execute(connectionHandler); // Thêm ConnectionHandler vào ExecutorService để xử lý kết nối
+                Socket clientSocket = serverSocket.accept();
+                ConnectionHandler handler = new ConnectionHandler(clientSocket, this);
+                connections.add(handler);
+                pool.execute(handler);
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             shutdown();
         }
     }
 
     public void broadcast(String message) {
-        for(ConnectionHandler connection : connections) {
-            if(connection != null) {
-                connection.sendMessage(message); // Gửi tin nhắn đến tất cả các kết nối
+        for (ConnectionHandler ch : connections) {
+            ch.sendMessage(message);
+        }
+    }
+
+    public void sendPrivate(String targetName, String message) {
+        for (ConnectionHandler ch : connections) {
+            if (targetName.equals(ch.getUsername())) {
+                ch.sendMessage(message);
+                break;
             }
         }
     }
 
     public void shutdown() {
-        try {
-            done = true; // Đặt biến done thành true để dừng server
-            if(!serverSocket.isClosed()) {
-                serverSocket.close(); // Đóng ServerSocket nếu nó chưa được đóng
-            }
-            for (ConnectionHandler connection : connections) {
-                connection.shutdown(); // Đóng tất cả các kết nối đến client
-            }
-        } catch (Exception e) {
-            // ignore exception
-        }
-    }
-
-    public class ConnectionHandler implements Runnable {
-        private Socket clientSocket; // Biến để lưu trữ kết nối socket đến client
-        private BufferedReader in;
-        private PrintWriter out;
-        private String nickname; // Biến để lưu trữ tên người dùng
-
-        public ConnectionHandler(Socket clientSocket) {
-            this.clientSocket = clientSocket; // Khởi tạo kết nối socket với client
-        }
-        @Override
-        public void run() {
-            try {
-                out = new PrintWriter(clientSocket.getOutputStream(), true); // Tạo PrintWriter để gửi dữ liệu đến client
-                in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream())); // Tạo BufferedReader để đọc dữ liệu từ client
-                out.println("Welcome to the chat server!"); // Gửi thông báo chào mừng đến client
-                out.println("Enter your name: "); // Yêu cầu client nhập tên
-                nickname = in.readLine(); // Đọc tên người dùng từ client
-                System.out.println("Client connected: " + nickname); // In ra tên người dùng đã kết nối
-                broadcast(nickname + " has joined the chat!"); // Phát sóng thông báo đến tất cả các kết nối
-                String message;
-                while ((message = in.readLine()) != null) { // Đọc dữ liệu từ client
-                    if (message.startsWith("/nick")) { // Kiểm tra nếu client gửi lệnh /quit
-                        String[] messagesplit = message.split(" ", 2); // Tách lệnh và tên mới
-                        if(messagesplit.length == 2) {
-                            broadcast(nickname + " has changed their name to " + messagesplit[1]); // Phát sóng thông báo đổi tên
-                            System.out.println(nickname + " changed name to " + messagesplit[1]); // In ra thông báo đổi tên
-                            nickname = messagesplit[1]; // Cập nhật tên người dùng
-                            System.out.println("Nickname changed to: " + nickname); // In ra tên mới
-                        } else {
-                            out.println("Usage: /nick <new_name>"); // Gửi hướng dẫn sử dụng lệnh đổi tên
-                        }
-                    } else if (message.startsWith("/quit")) {
-                        broadcast(nickname + " has left the chat!"); // Phát sóng thông báo người dùng rời khỏi chat
-                        shutdown(); // Đóng kết nối khi người dùng gửi lệnh /quit
-                    } else {
-                        broadcast(nickname + ": " + message); // Phát sóng tin nhắn đến tất cả các kết nối
-                    }
-
-                }
-            } catch (Exception e) {
-                shutdown();
-            }
-        }
-
-        public void shutdown() {
-            try {
-                in.close();
-                out.close(); // Đóng PrintWriter và BufferedReader
-                if(!clientSocket.isClosed()) {
-                    clientSocket.close(); // Đóng kết nối socket nếu nó chưa được đóng
-                }
-            } catch (IOException e) {
-                // ignore exception
-            }
-        }
-
-        public void sendMessage(String message) {
-            out.println(message); // Gửi tin nhắn đến client
+        done = true;
+        try { if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close(); }
+        catch (IOException ignored) {}
+        for (ConnectionHandler ch : connections) {
+            ch.shutdown();
         }
     }
 
     public static void main(String[] args) {
-        TCPServer server = new TCPServer(); // Tạo một instance của TCPServer
-        server.run();
+        new TCPServer().run();
+    }
+
+    public List<ConnectionHandler> getConnections() { return connections; }
+
+    public static class ConnectionHandler implements Runnable {
+        private final Socket clientSocket;
+        private final TCPServer server;
+        private BufferedReader in;
+        private PrintWriter out;
+        private boolean authenticated = false;
+        private User currentUser;
+        private String username;
+        private final UserDAO userDAO = new UserDAO();
+
+        public ConnectionHandler(Socket socket, TCPServer server) {
+            this.clientSocket = socket;
+            this.server = server;
+        }
+
+        @Override
+        public void run() {
+            try {
+                in  = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                out = new PrintWriter(clientSocket.getOutputStream(), true);
+
+                out.println("Welcome to the chat server!");
+                out.println("Please /register <username> <password> or /login <username> <password> to continue.");
+
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (!authenticated) {
+                        handleAuth(message);
+                    } else {
+                        handleChat(message);
+                    }
+                }
+            } catch (IOException e) {
+                shutdown();
+            }
+        }
+
+        private void handleAuth(String message) {
+            try {
+                if (message.startsWith("/register ")) {
+                    String[] parts = message.split(" ", 3);
+                    if (parts.length < 3) {
+                        out.println("Usage: /register <username> <password>");
+                        return;
+                    }
+                    String regUser = parts[1], regPass = parts[2];
+                    if (userDAO.getUserByUsername(regUser) != null) {
+                        out.println("Username already exists.");
+                    } else {
+                        String hash = BCrypt.hashpw(regPass, BCrypt.gensalt());
+                        if (userDAO.registerUser(regUser, hash)) {
+                            out.println("Registration successful. Please /login <username> <password>.");
+                        } else {
+                            out.println("Registration failed. Try again.");
+                        }
+                    }
+
+                } else if (message.startsWith("/login ")) {
+                    String[] parts = message.split(" ", 3);
+                    if (parts.length < 3) {
+                        out.println("Usage: /login <username> <password>");
+                        return;
+                    }
+                    String loginUser = parts[1], loginPass = parts[2];
+                    User user = userDAO.getUserByUsername(loginUser);
+
+                    if (user != null && BCrypt.checkpw(loginPass, user.getPasswordHash())) {
+                        authenticated = true;
+                        currentUser = user;
+                        username    = user.getUsername();
+                        out.println("Login successful! Welcome, " + username);
+
+                        // === LOAD LỊCH SỬ Ở ĐÂY ===
+                        List<Message> history = new MessageDAO().getMessagesForUser(currentUser.getId());
+                        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                        for (Message m : history) {
+                            out.println(String.format("[%s] [%s]: %s",
+                                m.getCreatedAt().format(fmt),
+                                m.getSenderUsername(),
+                                m.getContent()));
+                        }
+                        // ==========================
+
+                        server.broadcast(username + " has joined the chat!");
+                    } else {
+                        out.println("Login failed. Invalid username or password.");
+                    }
+
+                } else {
+                    out.println("Please /register or /login to continue.");
+                }
+            } catch (Exception e) {
+                out.println("Error during authentication: " + e.getMessage());
+            }
+        }
+
+        public User getCurrentUser() { return currentUser; }
+
+        private void handleChat(String message) {
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String ts = LocalDateTime.now().format(fmt);
+
+            if (!message.startsWith("@")) {
+                // broadcast
+                String text = message;
+                // 1) với mỗi kết nối đã auth, lưu message → FK ok
+                for (ConnectionHandler ch : server.getConnections()) {
+                    if (ch.authenticated) {
+                        Message msg = new Message(
+                          currentUser.getId(),
+                          ch.getCurrentUser().getId(),
+                          text
+                        );
+                        new MessageDAO().saveMessage(msg);
+                        // 2) gửi thật
+                        ch.sendMessage(
+                          String.format("[%s] [%s]: %s", ts, currentUser.getUsername(), text)
+                        );
+                    }
+                }
+            }
+            // … các case @private, /nick, /quit giữ nguyên
+        }
+
+        public void sendMessage(String msg) {
+            out.println(msg);
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void shutdown() {
+            try {
+                if (in  != null) in.close();
+                if (out != null) out.close();
+                if (clientSocket != null && !clientSocket.isClosed())
+                    clientSocket.close();
+            } catch (IOException ignored) {}
+        }
     }
 }
+

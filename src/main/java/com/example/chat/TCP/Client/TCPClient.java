@@ -20,6 +20,8 @@ public class TCPClient implements Runnable {
             out = new PrintWriter(client.getOutputStream(), true); // Tạo PrintWriter để gửi dữ liệu đến server
             in = new BufferedReader(new InputStreamReader(client.getInputStream())); // Tạo BufferedReader để đọc dữ liệu từ server
 
+            System.out.println("Welcome! Please use /register <username> <password> or /login <username> <password> to begin.");
+
             InputHandle inputHandle = new InputHandle(); // Tạo một luồng để xử lý đầu vào từ bàn phím
             Thread inputThread = new Thread(inputHandle); // Tạo một luồng mới để chạy InputHandle
             inputThread.start(); // Bắt đầu luồng InputHandle
@@ -58,6 +60,8 @@ public class TCPClient implements Runnable {
                         out.println(message);
                         inReader.close();
                         shutdown(); // Nếu người dùng nhập "/quit", đóng kết nối
+                    } else if (message.startsWith("/register ") || message.startsWith("/login ")) {
+                        out.println(message); // Send registration or login command to server
                     } else {
                         out.println(message); // Gửi tin nhắn đến server
                     }
@@ -73,3 +77,4 @@ public class TCPClient implements Runnable {
         client.run(); // Gọi phương thức run để bắt đầu client
     }
 }
+

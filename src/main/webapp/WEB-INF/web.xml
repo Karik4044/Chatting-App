@@ -1,51 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee 
-         https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
-         version="5.0">
-
-    <display-name>FinalChatting</display-name>
-
-    <!-- Welcome files -->
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
+         version="4.0">
+    <servlet>
+        <servlet-name>ChatServlet</servlet-name>
+        <servlet-class>com.example.chat.servlet.ChatServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>ChatServlet</servlet-name>
+        <url-pattern>/chat</url-pattern>
+    </servlet-mapping>
     <welcome-file-list>
-        <welcome-file>index.jsp</welcome-file>
-        <welcome-file>login</welcome-file>
+        <welcome-file>chat.jsp</welcome-file>
     </welcome-file-list>
-
-    <!-- Character encoding filter -->
-    <filter>
-        <filter-name>CharacterEncodingFilter</filter-name>
-        <filter-class>org.apache.catalina.filters.SetCharacterEncodingFilter</filter-class>
-        <init-param>
-            <param-name>encoding</param-name>
-            <param-value>UTF-8</param-value>
-        </init-param>
-        <init-param>
-            <param-name>ignore</param-name>
-            <param-value>false</param-value>
-        </init-param>
-    </filter>
-
-    <filter-mapping>
-        <filter-name>CharacterEncodingFilter</filter-name>
-        <url-pattern>/*</url-pattern>
-    </filter-mapping>
-
-    <!-- Session configuration -->
-    <session-config>
-        <session-timeout>30</session-timeout>
-    </session-config>
-
-    <!-- Error pages -->
-    <error-page>
-        <error-code>404</error-code>
-        <location>/login</location>
-    </error-page>
-
-    <error-page>
-        <error-code>500</error-code>
-        <location>/login</location>
-    </error-page>
-
 </web-app>
