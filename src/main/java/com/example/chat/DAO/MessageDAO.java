@@ -9,7 +9,6 @@ import java.util.List;
 
 public class MessageDAO {
 
-    /** Lưu message mới, trả về true nếu thành công */
     public boolean saveMessage(Message message) {
         Transaction tx = null;
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
@@ -24,7 +23,6 @@ public class MessageDAO {
         }
     }
 
-    /** Lấy danh sách tin nhắn cho người dùng cụ thể */
     public List<Message> getMessagesForUser(Long userId) {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             String hql = "select m " +
@@ -35,6 +33,36 @@ public class MessageDAO {
                          "order by m.timeStamp asc";
             return session.createQuery(hql, Message.class)
                           .setParameter("uid", userId)
+                          .getResultList();
+        }
+    }
+
+    // Get messages between two users
+    public List<Message> getMessagesBetweenUsers(Long userId1, Long userId2) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "select m " +
+                         "from Message m " +
+                         "join fetch m.sender " +
+                         "where (m.senderId = :id1 and m.receiverId = :id2) " +
+                         "or (m.senderId = :id2 and m.receiverId = :id1) " +
+                         "order by m.timeStamp asc";
+            return session.createQuery(hql, Message.class)
+                          .setParameter("id1", userId1)
+                          .setParameter("id2", userId2)
+                          .getResultList();
+        }
+    }
+
+    // (Optional) Get messages for a group chat
+    public List<Message> getMessagesForGroup(String groupName) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "select m " +
+                         "from Message m " +
+                         "join fetch m.sender " +
+                         "where m.groupName = :gname " +
+                         "order by m.timeStamp asc";
+            return session.createQuery(hql, Message.class)
+                          .setParameter("gname", groupName)
                           .getResultList();
         }
     }
