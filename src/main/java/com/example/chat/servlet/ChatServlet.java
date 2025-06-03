@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+// import org.mindrot.jbcrypt.BCrypt; // Nếu bạn cần tạo user mẫu với password hash
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -23,23 +24,21 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
-// Using @WebServlet annotation is an alternative to web.xml, but web.xml takes precedence if both exist for the same servlet name/url.
-// Since web.xml defines it, this annotation is more for clarity or if web.xml entry was removed.
 @WebServlet(name = "ChatServlet", urlPatterns = {"/chat"})
 public class ChatServlet extends HttpServlet {
 
     private MessageDAO messageDAO;
-    private UserDAO userDAO; // Assuming you might need user info
+    private UserDAO userDAO;
     private Gson gson;
 
     @Override
     public void init() throws ServletException {
         messageDAO = new MessageDAO();
-        userDAO = new UserDAO(); // Initialize UserDAO
+        userDAO = new UserDAO();
 
-        // Configure Gson for LocalDateTime serialization/deserialization
         GsonBuilder gsonBuilder = new GsonBuilder();
         gsonBuilder.registerTypeAdapter(LocalDateTime.class,
                 (JsonSerializer<LocalDateTime>) (src, typeOfSrc, context) ->
@@ -53,87 +52,144 @@ public class ChatServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        String action = request.getParameter("action");
-        HttpSession session = request.getSession(false); // Don't create new session if not exists
+        HttpSession session = request.getSession(); // Tạo session nếu chưa có
+        User currentUser = (User) session.getAttribute("user");
 
-        User currentUser = (session != null) ? (User) session.getAttribute("user") : null;
-
+        // --- Giả lập đăng nhập cho mục đích demo ---
         if (currentUser == null) {
-            // For AJAX requests, send an error; for page loads, redirect to login (not implemented here)
-            if ("getMessages".equals(action) || "getUsers".equals(action)) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json");
-                response.getWriter().write(gson.toJson(Collections.singletonMap("error", "User not authenticated")));
+            // CỐ GẮNG ĐĂNG NHẬP VỚI USER "karik". HÃY ĐẢM BẢO USER NÀY TỒN TẠI TRONG DB.
+            // HOẶC THAY "karik" BẰNG MỘT USERNAME CÓ SẴN.
+            String demoUsername = "karik"; // <<<< THAY ĐỔI USERNAME NÀY NẾU CẦN
+            currentUser = userDAO.getUserByUsername(demoUsername);
+
+            if (currentUser == null) {
+                // Nếu không có user "karik", thử lấy user đầu tiên trong DB
+                List<User> allDbUsers = userDAO.getAllUsers();
+                if (allDbUsers != null && !allDbUsers.isEmpty()) {
+                    currentUser = allDbUsers.get(0);
+                    System.out.println("Không tìm thấy user '" + demoUsername + "', đã đăng nhập giả lập bằng user: " + currentUser.getUsername());
+                } else {
+                    // Nếu DB trống, có thể tạo user mẫu (nhưng cần cẩn thận với việc này trong môi trường thực)
+                    System.out.println("Không có user nào trong CSDL. Hãy tạo user trước.");
+                    // Ví dụ tạo user (chỉ khi DB trống hoàn toàn):
+                    // if (userDAO.registerUser("testuser", BCrypt.hashpw("password", BCrypt.gensalt()))) {
+                    //    currentUser = userDAO.getUserByUsername("testuser");
+                    //    System.out.println("Đã tạo và đăng nhập giả lập bằng user 'testuser'");
+                    // } else {
+                    response.getWriter().println("Lỗi nghiêm trọng: Không có người dùng nào trong CSDL và không thể tạo người dùng mẫu. Vui lòng kiểm tra CSDL và tạo người dùng thủ công.");
+                    return;
+                    // }
+                }
+            }
+
+            if (currentUser != null) {
+                session.setAttribute("user", currentUser);
+                System.out.println("Người dùng giả lập đã đăng nhập: " + currentUser.getUsername() + " (ID: " + currentUser.getId() + ")");
+            } else {
+                response.getWriter().println("Không thể xác định người dùng hiện tại. Vui lòng đảm bảo có người dùng trong CSDL.");
                 return;
             }
-            // If it's a direct GET to /chat without being logged in, redirect to a login page (conceptual)
-            // response.sendRedirect("login.jsp"); // Assuming you have a login.jsp
-            // For now, let's just show the chat page, which will be limited
-            request.getRequestDispatcher("/chat.jsp").forward(request, response);
-            return;
         }
+        // --- Kết thúc giả lập đăng nhập ---
 
+        request.setCharacterEncoding("UTF-8"); // Đảm bảo request encoding
+        response.setCharacterEncoding("UTF-8"); // Đảm bảo response encoding
 
-        if ("getMessages".equals(action)) {
-            String chatWithUserIdStr = request.getParameter("chatWith");
-            String groupName = request.getParameter("groupName");
-            List<Message> messages;
+        String action = request.getParameter("action");
 
-            if (chatWithUserIdStr != null && !chatWithUserIdStr.isEmpty()) {
-                try {
-                    Long chatWithUserId = Long.parseLong(chatWithUserIdStr);
-                    messages = messageDAO.getMessagesBetweenUsers(currentUser.getId(), chatWithUserId);
-                } catch (NumberFormatException e) {
-                    messages = Collections.emptyList();
-                }
-            } else if (groupName != null && !groupName.isEmpty()) {
-                messages = messageDAO.getMessagesForGroup(groupName);
-            } else {
-                // Default: maybe load messages for a general room or last active chat
-                // For now, returning empty if no specific chat is requested
-                messages = Collections.emptyList();
-            }
+        if ("getUsers".equals(action)) {
+            handleGetUsers(request, response, currentUser);
+        } else if ("getMessages".equals(action)) {
+            handleGetMessages(request, response, currentUser);
+        } else {
+            // Default action: Tải trang JSP ban đầu
+            List<User> allUsers = userDAO.getAllUsers();
+            if (allUsers == null) allUsers = new ArrayList<>(); // Tránh NullPointerException
 
-            // Prepare messages for JSON, including sender username
-            List<Map<String, Object>> messagesForJson = messages.stream().map(msg -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("id", msg.getId());
-                map.put("senderId", msg.getSenderId());
-                map.put("senderUsername", msg.getSender() != null ? msg.getSender().getUsername() : "Unknown");
-                map.put("receiverId", msg.getReceiverId());
-                map.put("groupName", msg.getGroupName());
-                map.put("content", msg.getContent());
-                map.put("timeStamp", msg.getTimeStamp().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-                map.put("isCurrentUser", msg.getSenderId().equals(currentUser.getId()));
-                return map;
-            }).collect(Collectors.toList());
-
-            response.setContentType("application/json");
-            response.setCharacterEncoding("UTF-8");
-            response.getWriter().write(gson.toJson(messagesForJson));
-
-        } else if ("getUsers".equals(action)) {
-            List<User> users = userDAO.getAllUsers();
-            // Filter out the current user from the list
-            List<User> otherUsers = users.stream()
-                    .filter(user -> !user.getId().equals(currentUser.getId()))
+            User finalCurrentUser = currentUser;
+            List<User> conversations = allUsers.stream()
+                    .filter(user -> !user.getId().equals(finalCurrentUser.getId()))
                     .collect(Collectors.toList());
-            response.setContentType("application/json");
-            response.setCharacterEncoding("UTF-8");
-            response.getWriter().write(gson.toJson(otherUsers));
-        }
-        else {
-            // Default action: forward to chat page
-            // You might want to pass initial data like the current user
+
+            request.setAttribute("conversations", conversations); // Danh sách này có thể rỗng
             request.setAttribute("currentUser", currentUser);
-            request.getRequestDispatcher("/chat.jsp").forward(request, response);
+
+            // Không cần tải active chat messages ban đầu nữa, JavaScript sẽ làm việc đó
+            request.getRequestDispatcher("/chat.jsp").forward(request, response); // Đảm bảo tên file JSP đúng
         }
     }
+
+    private void handleGetUsers(HttpServletRequest request, HttpServletResponse response, User currentUser) throws IOException {
+        List<User> allUsers = userDAO.getAllUsers();
+        if (allUsers == null) allUsers = new ArrayList<>();
+
+        List<Map<String, Object>> usersForJson = allUsers.stream()
+                .filter(user -> !user.getId().equals(currentUser.getId()))
+                .map(user -> {
+                    Map<String, Object> userMap = new HashMap<>();
+                    userMap.put("id", user.getId());
+                    userMap.put("username", user.getUsername());
+                    // Bạn có thể cải thiện việc lấy tin nhắn cuối và thời gian sau
+                    userMap.put("lastMessagePreview", "Nhấp để xem tin nhắn...");
+                    userMap.put("lastMessageTime", "");
+                    userMap.put("avatarUrl", "https://i.pravatar.cc/50?u=" + user.getUsername().replaceAll("\\s+", "")); // Loại bỏ khoảng trắng cho URL
+                    return userMap;
+                })
+                .collect(Collectors.toList());
+
+        response.setContentType("application/json");
+        response.getWriter().write(gson.toJson(usersForJson));
+    }
+
+    private void handleGetMessages(HttpServletRequest request, HttpServletResponse response, User currentUser) throws IOException {
+        String chatWithUserIdStr = request.getParameter("chatWithUserId");
+        List<Message> messages = Collections.emptyList();
+
+        if (chatWithUserIdStr != null && !chatWithUserIdStr.isEmpty()) {
+            try {
+                Long chatWithUserId = Long.parseLong(chatWithUserIdStr);
+                User partner = userDAO.getUserById(chatWithUserId);
+                if (partner != null) {
+                    messages = messageDAO.getMessagesBetweenUsers(currentUser.getId(), chatWithUserId);
+                } else {
+                    System.err.println("Không tìm thấy partner với ID: " + chatWithUserIdStr);
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("chatWithUserId không hợp lệ: " + chatWithUserIdStr);
+            }
+        }
+
+        List<Map<String, Object>> messagesForJson = messages.stream().map(msg -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", msg.getId());
+            map.put("senderId", msg.getSenderId());
+            // Lấy senderUsername từ User object được fetch cùng Message (nếu có)
+            // Hoặc query lại nếu cần, nhưng join fetch trong MessageDAO là tốt hơn
+            String senderUsername = "Unknown";
+            if (msg.getSender() != null) {
+                senderUsername = msg.getSender().getUsername();
+            } else {
+                User senderUser = userDAO.getUserById(msg.getSenderId());
+                if (senderUser != null) senderUsername = senderUser.getUsername();
+            }
+            map.put("senderUsername", senderUsername);
+            map.put("content", msg.getContent());
+            map.put("timestamp", msg.getCreatedAt().format(DateTimeFormatter.ISO_DATE_TIME));
+            map.put("isSentByCurrentUser", msg.getSenderId().equals(currentUser.getId()));
+            return map;
+        }).collect(Collectors.toList());
+
+        response.setContentType("application/json");
+        response.getWriter().write(gson.toJson(messagesForJson));
+    }
+
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        String action = request.getParameter("action");
+        request.setCharacterEncoding("UTF-8");
+        response.setCharacterEncoding("UTF-8");
+
         HttpSession session = request.getSession(false);
         User currentUser = (session != null) ? (User) session.getAttribute("user") : null;
 
@@ -148,70 +204,62 @@ public class ChatServlet extends HttpServlet {
             return;
         }
 
+        String action = request.getParameter("action");
+
         if ("sendMessage".equals(action)) {
             String content = request.getParameter("content");
             String receiverIdStr = request.getParameter("receiverId");
-            String groupName = request.getParameter("groupName");
+            // String groupName = request.getParameter("groupName"); // Cho group chat sau
 
             if (content == null || content.trim().isEmpty()) {
                 jsonResponse.put("status", "error");
-                jsonResponse.put("message", "Message content cannot be empty.");
+                jsonResponse.put("message", "Nội dung tin nhắn không thể trống.");
+            } else if (receiverIdStr == null || receiverIdStr.isEmpty()) {
+                jsonResponse.put("status", "error");
+                jsonResponse.put("message", "Cần có ID người nhận.");
             } else {
-                Message newMessage = new Message();
-                newMessage.setSenderId(currentUser.getId());
-                newMessage.setContent(content);
-                newMessage.setTimeStamp(LocalDateTime.now());
-
-                boolean messageSaved = false;
-                if (receiverIdStr != null && !receiverIdStr.isEmpty()) {
-                    try {
-                        Long receiverId = Long.parseLong(receiverIdStr);
-                        if (userDAO.getUserById(receiverId) == null) {
-                            jsonResponse.put("status", "error");
-                            jsonResponse.put("message", "Receiver not found.");
-                        } else {
-                            newMessage.setReceiverId(receiverId);
-                            messageSaved = messageDAO.saveMessage(newMessage);
-                        }
-                    } catch (NumberFormatException e) {
+                try {
+                    Long receiverId = Long.parseLong(receiverIdStr);
+                    if (userDAO.getUserById(receiverId) == null) {
                         jsonResponse.put("status", "error");
-                        jsonResponse.put("message", "Invalid receiver ID.");
+                        jsonResponse.put("message", "Người nhận không tồn tại.");
+                    } else {
+                        Message newMessage = new Message(currentUser.getId(), receiverId, content);
+                        // newMessage.setCreatedAt(LocalDateTime.now()); // Constructor đã làm
+
+                        if (messageDAO.saveMessage(newMessage)) {
+                            jsonResponse.put("status", "success");
+                            jsonResponse.put("message", "Tin nhắn đã gửi!");
+
+                            Map<String, Object> msgMap = new HashMap<>();
+                            // ID của tin nhắn newMessage sẽ được tự động gán sau khi persist thành công
+                            // Để lấy ID này, bạn cần load lại Message object hoặc đảm bảo persist cập nhật ID.
+                            // Hiện tại, chúng ta sẽ không trả về ID của tin nhắn mới vì nó phức tạp hơn chút.
+                            // msgMap.put("id", newMessage.getId());
+                            msgMap.put("senderId", newMessage.getSenderId());
+                            msgMap.put("senderUsername", currentUser.getUsername());
+                            msgMap.put("receiverId", newMessage.getReceiverId());
+                            msgMap.put("content", newMessage.getContent());
+                            msgMap.put("timestamp", newMessage.getCreatedAt().format(DateTimeFormatter.ISO_DATE_TIME));
+                            msgMap.put("isSentByCurrentUser", true);
+                            jsonResponse.put("sentMessage", msgMap);
+
+                        } else {
+                            jsonResponse.put("status", "error");
+                            jsonResponse.put("message", "Lỗi khi gửi tin nhắn (không lưu được vào DB).");
+                        }
                     }
-                } else if (groupName != null && !groupName.isEmpty()) {
-                    newMessage.setGroupName(groupName);
-                    messageSaved = messageDAO.saveMessage(newMessage);
-                } else {
+                } catch (NumberFormatException e) {
                     jsonResponse.put("status", "error");
-                    jsonResponse.put("message", "Receiver ID or Group Name is required.");
-                }
-
-                if (messageSaved) {
-                    jsonResponse.put("status", "success");
-                    jsonResponse.put("message", "Message sent!");
-                    // Optionally return the saved message
-                    Map<String, Object> msgMap = new HashMap<>();
-                    msgMap.put("id", newMessage.getId()); // ID will be generated after save
-                    msgMap.put("senderId", newMessage.getSenderId());
-                    msgMap.put("senderUsername", currentUser.getUsername());
-                    msgMap.put("receiverId", newMessage.getReceiverId());
-                    msgMap.put("groupName", newMessage.getGroupName());
-                    msgMap.put("content", newMessage.getContent());
-                    msgMap.put("timeStamp", newMessage.getTimeStamp().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-                    msgMap.put("isCurrentUser", true);
-                    jsonResponse.put("sentMessage", msgMap);
-
-                } else if (!jsonResponse.containsKey("message")){ // if no specific error was set before
-                    jsonResponse.put("status", "error");
-                    jsonResponse.put("message", "Failed to send message.");
+                    jsonResponse.put("message", "ID người nhận không hợp lệ.");
                 }
             }
         } else {
             jsonResponse.put("status", "error");
-            jsonResponse.put("message", "Invalid action.");
+            jsonResponse.put("message", "Hành động không hợp lệ.");
         }
 
         response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
         response.getWriter().write(gson.toJson(jsonResponse));
     }
 }
