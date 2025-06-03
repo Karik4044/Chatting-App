@@ -233,6 +233,10 @@
             </div>
         </header>
 
+        <div class="messages-display" style="display:none;flex-grow:1;overflow-y:auto;padding:20px;">
+            <ul id="msgs" style="list-style:none;padding:0;margin:0;"></ul>
+        </div>
+
         <div class="media-display-area">
             <div class="media-content">
                 <img src="https://i.imgur.com/YQx2m9g.jpeg" alt="Nội dung media">
@@ -254,28 +258,60 @@
 </div>
 
 <script>
-    // JavaScript để xử lý việc chọn chat item
+    let currentTarget=null, currentType=null;
+    const msgsUL = document.getElementById('msgs');
+    const messagesDisplay = document.querySelector('.messages-display');
+    const mediaArea = document.querySelector('.media-display-area');
+
     document.querySelectorAll('.chat-list-item').forEach(item => {
         item.addEventListener('click', function() {
-            // Bỏ class 'active' ở item đang active (nếu có)
-            const currentActive = document.querySelector('.chat-list-item.active');
-            if (currentActive) {
-                currentActive.classList.remove('active');
-            }
-            // Thêm class 'active' cho item được click
+            // active class
+            document.querySelectorAll('.chat-list-item.active').forEach(a=>a.classList.remove('active'));
             this.classList.add('active');
 
-            // Cập nhật header của khu vực chat chính (ví dụ)
-            const avatarSrc = this.querySelector('img.avatar').src;
-            const name = this.querySelector('.info .name').textContent;
-
-            document.querySelector('.chat-area-header img.avatar').src = avatarSrc.replace('50?u=', '40?u='); // Thay đổi kích thước avatar cho header
+            // header update
+            const avatar = this.querySelector('img.avatar').src.replace('50?u=','40?u=');
+            const name  = this.querySelector('.info .name').textContent;
+            document.querySelector('.chat-area-header img.avatar').src = avatar;
             document.querySelector('.chat-area-header .user-info .name').textContent = name;
 
-            // Tại đây bạn sẽ cần logic để tải tin nhắn cho cuộc trò chuyện này
-            // Ví dụ: loadMessagesForUser(name);
-            // Và có thể chuyển đổi giữa việc hiển thị media-display-area và messages-display
-            console.log("Chuyển sang chat với: " + name);
+            // xác định target & type rồi fetch lịch sử
+            currentTarget = name;
+            currentType   = 'private'; // hoặc 'group' nếu danh sách nhóm
+            fetch(`chat?target=${encodeURIComponent(currentTarget)}&type=${currentType}`)
+                .then(r=>r.json())
+                .then(data=>{
+                    msgsUL.innerHTML = '';
+                    data.forEach(m=>{
+                        const li = document.createElement('li');
+                        li.className = 'message ' + (m.senderId === /* server side ghi senderId */ null ? 'sent' : 'received');
+                        li.textContent = `${m.content}`;
+                        msgsUL.appendChild(li);
+                    });
+                    mediaArea.style.display='none';
+                    messagesDisplay.style.display='flex';
+                    messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+                });
+        });
+    });
+
+    // gửi tin
+    document.querySelector('.message-input button[title="Gửi"]').addEventListener('click',()=>{
+        const txt = document.querySelector('.message-input input[type="text"]');
+        if(!currentTarget||!txt.value) return;
+        fetch('chat', {
+            method:'POST',
+            headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body:`target=${encodeURIComponent(currentTarget)}&type=${currentType}&message=${encodeURIComponent(txt.value)}`
+        })
+        .then(r=>r.json())
+        .then(m=>{
+            const li = document.createElement('li');
+            li.className='message sent';
+            li.textContent = m.content;
+            msgsUL.appendChild(li);
+            messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+            txt.value='';
         });
     });
 </script>

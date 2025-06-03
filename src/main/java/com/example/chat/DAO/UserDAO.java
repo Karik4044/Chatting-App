@@ -41,22 +41,4 @@ public class UserDAO {
     // ----- CÁC PHƯƠNG THỨC CẦN THIẾT CHO ChatServlet NHƯNG CHƯA CÓ -----
     // ChatServlet.java sử dụng userDAO.getAllUsers() và userDAO.getUserById()
     // Dưới đây là gợi ý triển khai cho các phương thức đó:
-
-    public List<User> getAllUsers() {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            return session.createQuery("FROM User", User.class).list();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null; // Hoặc trả về Collections.emptyList();
-        }
-    }
-
-    public User getUserById(Long id) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            return session.get(User.class, id);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
 }
