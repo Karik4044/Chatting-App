@@ -21,14 +21,20 @@ public class TCPServer implements Runnable {
     private ServerSocket serverSocket;
     private boolean done = false;
     private ExecutorService pool;
+    private WebSocketMessageHandler webSocketHandler;
 
+    public TCPServer() {}
+
+    public void setWebSocketHandler(WebSocketMessageHandler handler) {
+        this.webSocketHandler = handler;
+    }
 
     @Override
     public void run() {
         try {
-            serverSocket = new ServerSocket(8080);
+            serverSocket = new ServerSocket(8081);
             pool = Executors.newCachedThreadPool();
-            System.out.println("TCP Server started on port 8080");
+            System.out.println("TCP Server started on port 8081");
             while (!done) {
                 Socket clientSocket = serverSocket.accept();
                 ConnectionHandler handler = new ConnectionHandler(clientSocket, this);
@@ -40,9 +46,6 @@ public class TCPServer implements Runnable {
         }
     }
 
-    /**
-     * Chỉ gửi thông báo chung tới những ai chưa vào private/group chat
-     */
     public void broadcastGlobal(String message) {
         for (ConnectionHandler ch : connections) {
             if (!ch.isInChat()) {
@@ -66,20 +69,38 @@ public class TCPServer implements Runnable {
         }
     }
 
+    public void broadcastWebSocketMessage(String username, String target, String message, boolean isGroup) {
+        String formattedMessage = String.format("[%s] [%s->%s]: %s",
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                username, target, message);
+        if (isGroup) {
+            for (ConnectionHandler ch : connections) {
+                if (ch.isGroupChat && target.equals(ch.currentChatTarget)) {
+                    ch.sendMessage(formattedMessage);
+                }
+            }
+        } else {
+            sendPrivate(target, formattedMessage);
+        }
+    }
+
     public void shutdown() {
         done = true;
-        try { if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close(); }
-        catch (IOException ignored) {}
+        try {
+            if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
+        } catch (IOException ignored) {}
         for (ConnectionHandler ch : connections) {
             ch.shutdown();
         }
     }
 
-    public static void main(String[] args) {
-        new TCPServer().run();
+    public List<ConnectionHandler> getConnections() {
+        return connections;
     }
 
-    public List<ConnectionHandler> getConnections() { return connections; }
+    public interface WebSocketMessageHandler {
+        void sendMessageToWebSocket(String username, String target, String message, boolean isGroup);
+    }
 
     public static class ConnectionHandler implements Runnable {
         private final Socket clientSocket;
@@ -90,8 +111,7 @@ public class TCPServer implements Runnable {
         private User currentUser;
         private String username;
         private final UserDAO userDAO = new UserDAO();
-        // MODIFIED: Added volatile
-        private volatile String currentChatTarget = null; // username or group name
+        private volatile String currentChatTarget = null;
         private volatile boolean isGroupChat = false;
 
         public ConnectionHandler(Socket socket, TCPServer server) {
@@ -102,7 +122,7 @@ public class TCPServer implements Runnable {
         @Override
         public void run() {
             try {
-                in  = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
 
                 out.println("Welcome to the chat server!");
@@ -143,9 +163,9 @@ public class TCPServer implements Runnable {
                     String sender = m.getSenderId().equals(currentUser.getId()) ? "You" : m.getSenderUsername();
                     String arrow = "";
                     if (!isGroupChat && m.getSenderId().equals(currentUser.getId())) {
-                         arrow = "->" + currentChatTarget;
+                        arrow = "->" + currentChatTarget;
                     } else if (isGroupChat) {
-                         arrow = "->" + currentChatTarget; // For group, sender is shown, then arrow to group
+                        arrow = "->" + currentChatTarget;
                     }
 
                     out.println(String.format("[%s] [%s%s]: %s",
@@ -206,7 +226,7 @@ public class TCPServer implements Runnable {
                 }
             } catch (Exception e) {
                 out.println("Error during authentication: " + e.getMessage());
-                e.printStackTrace(); // For server-side debugging
+                e.printStackTrace();
             }
         }
 
@@ -228,19 +248,15 @@ public class TCPServer implements Runnable {
             }
             if (message.startsWith("/group ")) {
                 String groupName = message.substring(7).trim();
-                // Implement group existence check if needed
                 currentChatTarget = groupName;
                 isGroupChat = true;
                 loadChatHistory();
-                // You might want to announce to the user they've joined/switched to a group chat
                 out.println("Entered group chat: " + groupName);
                 return;
             }
 
             if (currentChatTarget == null) {
                 out.println("Please select a chat target with /chat <username> or /group <groupname>.");
-                // Or, treat as a global message if your application supports it.
-                // For now, it requires a target.
                 return;
             }
 
@@ -248,41 +264,42 @@ public class TCPServer implements Runnable {
             String ts = LocalDateTime.now().format(fmt);
 
             if (isGroupChat) {
-                Message groupMsg = new Message(currentUser.getId(), null, message); // ReceiverId is null for group messages
+                Message groupMsg = new Message(currentUser.getId(), null, message);
                 groupMsg.setGroupName(currentChatTarget);
-                // groupMsg.setCreatedAt(LocalDateTime.now()); // Constructor sets this
                 new MessageDAO().saveMessage(groupMsg);
 
                 String formattedGroupMessage = String.format("[%s] [%s->%s]: %s",
                         ts,
                         currentUser.getUsername(),
-                        currentChatTarget, // Group name
+                        currentChatTarget,
                         message);
 
                 for (ConnectionHandler ch : server.getConnections()) {
-                    // Send only to users who are currently "in" this specific group chat
-                    // This simple check means they have to have typed /group <groupName>
-                    // More advanced group logic would involve group membership lists.
                     if (ch.isGroupChat && currentChatTarget.equals(ch.currentChatTarget)) {
                         ch.sendMessage(formattedGroupMessage);
                     }
                 }
-            } else { // Private chat
+
+                if (server.webSocketHandler != null) {
+                    server.webSocketHandler.sendMessageToWebSocket(username, currentChatTarget, message, true);
+                }
+            } else {
                 User targetUser = userDAO.getUserByUsername(currentChatTarget);
                 if (targetUser == null) {
                     out.println("Error: Target user " + currentChatTarget + " not found for sending message.");
-                    currentChatTarget = null; // Reset chat target
+                    currentChatTarget = null;
                     return;
                 }
                 Message privateMsg = new Message(currentUser.getId(), targetUser.getId(), message);
-                // privateMsg.setCreatedAt(LocalDateTime.now()); // Constructor sets this
                 new MessageDAO().saveMessage(privateMsg);
 
-                // Send to target recipient
-                server.sendPrivate(targetUser.getUsername(),
-                        String.format("[%s] [%s]: %s", ts, currentUser.getUsername(), message));
-                // Echo to sender
+                String formattedMessage = String.format("[%s] [%s]: %s", ts, currentUser.getUsername(), message);
+                server.sendPrivate(targetUser.getUsername(), formattedMessage);
                 out.println(String.format("[%s] [You->%s]: %s", ts, targetUser.getUsername(), message));
+
+                if (server.webSocketHandler != null) {
+                    server.webSocketHandler.sendMessageToWebSocket(username, currentChatTarget, message, false);
+                }
             }
         }
 
@@ -296,16 +313,16 @@ public class TCPServer implements Runnable {
 
         public void shutdown() {
             try {
-                server.connections.remove(this); // Remove from active connections
+                server.connections.remove(this);
                 if (username != null && authenticated) {
                     server.broadcastGlobal(username + " Offline.");
                 }
-                if (in  != null) in.close();
+                if (in != null) in.close();
                 if (out != null) out.close();
                 if (clientSocket != null && !clientSocket.isClosed())
                     clientSocket.close();
             } catch (IOException ignored) {}
-            System.out.println( (username != null ? username : "A client") + " disconnected.");
+            System.out.println((username != null ? username : "A client") + " disconnected.");
         }
     }
 }

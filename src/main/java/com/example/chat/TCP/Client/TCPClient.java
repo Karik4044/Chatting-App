@@ -11,13 +11,13 @@ public class TCPClient implements Runnable {
     private Socket client;
     private BufferedReader in;
     private PrintWriter out;
-    private volatile boolean done; // Made volatile for thread safety
+    private volatile boolean done;
     private String currentChatContext = null;
 
     @Override
     public void run() {
         try {
-            client = new Socket("localhost", 8080);
+            client = new Socket("localhost", 8081);
             out = new PrintWriter(client.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(client.getInputStream()));
 
@@ -44,10 +44,9 @@ public class TCPClient implements Runnable {
         if (done) {
             return;
         }
-        done = true; // Signal other loops to stop
+        done = true;
         System.out.println("Shutting down client...");
         try {
-            // Close streams first
             if (in != null) {
                 try {
                     in.close();
@@ -56,9 +55,8 @@ public class TCPClient implements Runnable {
                 }
             }
             if (out != null) {
-                out.close(); // This will also flush the stream
+                out.close();
             }
-            // Then close socket
             if (client != null && !client.isClosed()) {
                 try {
                     client.close();
@@ -66,7 +64,7 @@ public class TCPClient implements Runnable {
                     // ignore
                 }
             }
-        } catch (Exception e) { // Catch any other unexpected errors during shutdown
+        } catch (Exception e) {
             // ignore
         }
         System.out.println("Client shut down complete.");
@@ -75,30 +73,26 @@ public class TCPClient implements Runnable {
     public class InputHandle implements Runnable {
         @Override
         public void run() {
-            String line = null; // Declare line here to be accessible throughout the method
-            boolean exitedWithQuit = false; // Flag to track if /quit was used
+            String line = null;
+            boolean exitedWithQuit = false;
 
             try (BufferedReader inReader = new BufferedReader(new InputStreamReader(System.in))) {
-                while (!TCPClient.this.done) { // Check outer class's done flag
+                while (!TCPClient.this.done) {
                     line = inReader.readLine();
 
-                    if (line == null) { // EOF detected (e.g., Ctrl+D in Unix, Ctrl+Z then Enter in Windows cmd)
-                        System.out.println("Client: Input stream ended. Exiting input handler.");
+                    if (line == null) {
+                        System.out.println("Client: Input stream ended. Exiting.");
                         break;
                     }
 
-                    // Check done flag again, in case it was set while readLine() was blocking
                     if (TCPClient.this.done) {
                         break;
                     }
 
-                    // Ensure PrintWriter 'out' is available and connection is not closed
-                    // This check might be redundant if 'done' flag is handled well, but adds safety
-                    if (out == null || (client !=null && client.isOutputShutdown()) ) {
+                    if (out == null || (client != null && client.isOutputShutdown())) {
                         System.out.println("Client: Cannot send message. Output stream is not available.");
                         break;
                     }
-
 
                     if (line.equals("/quit")) {
                         if (out != null) out.println(line);
@@ -130,28 +124,25 @@ public class TCPClient implements Runnable {
                     } else {
                         if (TCPClient.this.currentChatContext == null && !(line.startsWith("/"))) {
                             System.out.println("Client: Please use /chat or /group to select a recipient before sending messages.");
-                            // Optionally, uncomment 'continue' to prevent sending the message:
-                            // continue;
+                            continue;
                         }
                         if (out != null) out.println(line);
                     }
                 }
             } catch (IOException e) {
-                if (!TCPClient.this.done) { // Only log error if not part of an intentional shutdown
+                if (!TCPClient.this.done) {
                     System.err.println("Client: Error reading input: " + e.getMessage());
                 }
             } finally {
-                // If this input handler loop terminates (for any reason other than 'done' already being true),
-                // it's best to ensure the main client initiates a full shutdown.
                 if (!TCPClient.this.done) {
                     if (exitedWithQuit) {
-                        System.out.println("Client: Input handler exited due to /quit command.");
+                        System.out.println("Client: Exited due to /quit command.");
                     } else if (line == null) {
-                        System.out.println("Client: Input handler exited due to end of input stream.");
+                        System.out.println("Client: Exited due to end of input stream.");
                     } else {
-                        System.out.println("Client: Input handler exited unexpectedly.");
+                        System.out.println("Client: Exited unexpectedly.");
                     }
-                    TCPClient.this.shutdown(); // Trigger a full client shutdown
+                    TCPClient.this.shutdown();
                 }
             }
         }
