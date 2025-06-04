@@ -7,6 +7,7 @@
 let currentChatTarget = null;
 let currentChatType = null;
 let allFetchedUsers = [];
+let ws;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Kiểm tra xem loggedInUserId đã được gán từ JSP chưa
@@ -21,9 +22,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // ví dụ: window.location.href = 'login.jsp';
         // Hoặc vô hiệu hóa các tính năng chat.
         const chatContainer = document.querySelector('.chat-container');
-        if(chatContainer) {
-            chatContainer.innerHTML = '<p style="padding:20px;">Bạn cần đăng nhập để sử dụng tính năng chat. <a href="login.jsp">Đăng nhập</a></p>';
-        }
     }
 
     const sendButton = document.getElementById('sendButton');
@@ -244,4 +242,18 @@ function scrollToBottom(element) {
     if (element) {
         element.scrollTop = element.scrollHeight;
     }
+}
+
+function connectWebSocket(username) {
+    ws = new WebSocket(`ws://${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/ws/chat/${username}`);
+    ws.onmessage = function(event) {
+        const msg = JSON.parse(event.data);
+        // Update UI with new message
+    };
+    ws.onclose = function() {
+        // Optionally try to reconnect
+    };
+}
+function sendMessage(target, type, content) {
+    ws.send(JSON.stringify({ target, type, content }));
 }

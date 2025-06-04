@@ -1,4 +1,4 @@
-Đây là tập tin SQL để tạo cơ sở dữ liệu và các bảng cần thiết cho ứng dụng nhắn tin. (Tôi không dùng, Chỉ dùng để tham khảo)
+
 CREATE DATABASE IF NOT EXISTS messenger_db;
 USE messenger_db;
 
@@ -26,6 +26,3 @@ select * from users;
 select * from messages;
 
 truncate table messages;
-
-CREATE INDEX idx_messages_timestamp ON messages (timestamp);
-CREATE INDEX idx_messages_username ON messages (username);

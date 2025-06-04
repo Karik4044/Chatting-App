@@ -5,7 +5,7 @@
 <head>
     <title>Giao Diện Chat</title>
     <%-- Link đến file CSS ngoài --%>
-    <link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath}/css/chat.css">
+    <link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath}/chat.css">
 </head>
 <body>
 <div class="chat-container">
