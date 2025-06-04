@@ -77,20 +77,10 @@
     File chat.js sẽ sử dụng các biến này.
 --%>
 <script>
-    var loggedInUserId = null;
-    var loggedInUsername = null;
-    <%
-        User loggedInUser = (User) session.getAttribute("user");
-        if (loggedInUser != null && loggedInUser.getId() != null && loggedInUser.getUsername() != null) {
-    %>
-    loggedInUserId = <%= loggedInUser.getId() %>;
-    loggedInUsername = "<%= loggedInUser.getUsername().replace("\"", "\\\"") %>"; // Escape quotes in username
-    <%
-        }
-    %>
+    const loggedInUsername = "<%= session.getAttribute("user") != null ? ((com.example.chat.Entity.User)session.getAttribute("user")).getUsername() : "" %>";
+    const loggedInUserId = "<%= session.getAttribute("user") != null ? ((com.example.chat.Entity.User)session.getAttribute("user")).getId() : 0L %>";
 </script>
-<%-- Link đến file JavaScript ngoài. 'defer' đảm bảo script được thực thi sau khi HTML đã parse. --%>
-<script src="${pageContext.request.contextPath}/chat.js" defer></script>
+<script src="chat.js"></script>
 
 </body>
 </html>
