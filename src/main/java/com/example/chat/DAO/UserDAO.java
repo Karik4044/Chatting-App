@@ -4,9 +4,11 @@ import com.example.chat.Entity.User;
 import com.example.chat.util.HibernateUtil;
 import org.hibernate.Session;
 import org.hibernate.Transaction; // Thêm import này nếu cần dùng Transaction tường minh
+import org.springframework.stereotype.Repository;
 
 import java.util.List; // Thêm import này cho getAllUsers
 
+@Repository
 public class UserDAO {
     public boolean registerUser (String username, String passwordHash) {
         Transaction transaction = null; // Khai báo transaction

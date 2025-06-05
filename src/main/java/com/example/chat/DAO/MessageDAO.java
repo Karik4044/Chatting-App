@@ -4,9 +4,11 @@ import com.example.chat.Entity.Message;
 import com.example.chat.util.HibernateUtil;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+@Repository
 public class MessageDAO {
 
     public boolean saveMessage(Message message) {

@@ -375,37 +375,78 @@
         ws.onclose = (event) => console.log("WebSocket closed:", event);
     }
 
-        async function loadUsers() {
-        const res = await fetch(ctx + '/api/users');
-        const usersArray = await res.json(); // Đổi tên biến để rõ ràng hơn, hoặc giữ nguyên là 'users'
-        const chatList = document.getElementById('chatList');
-        chatList.innerHTML = '';
-
-        // Lặp qua mảng các ĐỐI TƯỢNG user
-        usersArray.forEach(userObject => { // Đổi 'user' thành 'userObject' để phân biệt
-            // Bây giờ userObject là một đối tượng đầy đủ, ví dụ: { username: 'mambo', id: 2, ... }
-            if (currentUser && userObject.username !== currentUser.username) {
-                const chatItem = document.createElement('div');
-                chatItem.className = 'chat-item';
-                // Truyền userObject.username (là chuỗi) vào hàm selectChat
-                chatItem.onclick = () => selectChat(userObject.username, false);
-
-                console.log("Đang xử lý user cho danh sách (đối tượng):", userObject);
-                console.log("Giá trị userObject.username:", userObject.username);
-
-                chatItem.innerHTML = `
-                    <div class="avatar"><img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></div>
-                    <div class="chat-info">
-                        <div class="chat-name">${userObject.username}</div>
-                        <div class="chat-preview">No recent messages</div>
-                    </div>
-                    <div class="chat-meta">
-                        <div class="chat-time"></div>
-                    </div>
-                `;
-                chatList.appendChild(chatItem);
+    async function loadUsers() {
+        try {
+            const res = await fetch(ctx + '/api/users');
+            if (!res.ok) {
+                console.error("Lỗi khi tải danh sách người dùng:", res.status, await res.text());
+                // Có thể hiển thị thông báo lỗi cho người dùng ở đây
+                return;
             }
-        });
+            const usersArray = await res.json();
+            const chatList = document.getElementById('chatList');
+            chatList.innerHTML = ''; // Xóa các mục cũ trong danh sách
+
+            usersArray.forEach(userObject => {
+                // Kiểm tra nếu userObject hoặc userObject.username không hợp lệ
+                if (!userObject || typeof userObject.username === 'undefined') {
+                    console.warn("Bỏ qua người dùng do thiếu dữ liệu:", userObject);
+                    return; // Bỏ qua vòng lặp này nếu dữ liệu không đúng
+                }
+
+                // Log để kiểm tra username cụ thể đang được xử lý
+                // console.log("Đang xử lý user:", userObject.username);
+
+                if (currentUser && userObject.username !== currentUser.username) {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = 'chat-item';
+                    chatItem.onclick = function() {
+                        // Xoá lớp 'active' khỏi tất cả các mục chat
+                        document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
+
+
+                        this.classList.add('active');
+                        selectChat(userObject.username, false); // Gọi hàm selectChat với tên người dùng và isGroup là false
+                    }
+
+                    // Tạo phần tử avatar
+                    const avatarDiv = document.createElement('div');
+                    avatarDiv.className = 'avatar';
+                    avatarDiv.innerHTML = `<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+
+                    // Tạo phần tử chat-info
+                    const chatInfoDiv = document.createElement('div');
+                    chatInfoDiv.className = 'chat-info';
+
+                    const chatNameDiv = document.createElement('div');
+                    chatNameDiv.className = 'chat-name';
+                    chatNameDiv.textContent = userObject.username; // *** Gán tên bằng textContent ***
+
+                    const chatPreviewDiv = document.createElement('div');
+                    chatPreviewDiv.className = 'chat-preview';
+                    chatPreviewDiv.textContent = 'No recent messages'; // Hoặc nội dung xem trước tin nhắn
+
+                    chatInfoDiv.appendChild(chatNameDiv);
+                    chatInfoDiv.appendChild(chatPreviewDiv);
+
+                    // Tạo phần tử chat-meta
+                    const chatMetaDiv = document.createElement('div');
+                    chatMetaDiv.className = 'chat-meta';
+                    // chatMetaDiv.innerHTML = `<div class="chat-time"></div>`; // Thời gian có thể cập nhật sau
+
+                    // Gắn các phần tử con vào chatItem
+                    chatItem.appendChild(avatarDiv);
+                    chatItem.appendChild(chatInfoDiv);
+                    chatItem.appendChild(chatMetaDiv);
+
+                    // Gắn chatItem vào danh sách chat
+                    chatList.appendChild(chatItem);
+                }
+            });
+        } catch (error) {
+            console.error("Đã xảy ra lỗi trong hàm loadUsers:", error);
+            // Có thể hiển thị thông báo lỗi cho người dùng ở đây
+        }
     }
 
     function filterChatList(query) {
@@ -421,9 +462,7 @@
         isGroupChat = isGroup;
         document.getElementById('currentChatName').textContent = target;
         document.getElementById('currentChatAvatar').innerHTML = `
-        <img src="https://static.vectee.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg"
-             alt="avatar"
-             style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        <img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"> `;
         document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'Online';
         document.getElementById('messagesContainer').innerHTML = '';
 
@@ -431,7 +470,6 @@
             ws.send((isGroup ? '/group' : '/chat') + ' ' + target);
         } else {
             console.error("Lỗi selectChat: WebSocket không ở trạng thái OPEN. Không thể gửi lệnh.");
-            alert("WebSocket connection is not open. Please try again later.");
         }
     }
 
