@@ -23,7 +23,7 @@ public class AppConfig implements WebSocketConfigurer {
 
     @Bean
     public ChatWebSocketHandler chatWebSocketHandler(TCPServer tcpServer) {
-        return new ChatWebSocketHandler(tcpServer);
+        return new ChatWebSocketHandler();
     }
 
     @Override

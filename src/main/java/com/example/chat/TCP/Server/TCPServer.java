@@ -4,6 +4,7 @@ import com.example.chat.DAO.MessageDAO;
 import com.example.chat.DAO.UserDAO;
 import com.example.chat.Entity.Message;
 import com.example.chat.Entity.User;
+import com.sun.net.httpserver.HttpServer;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.*;
@@ -15,6 +16,8 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.io.IOException;
+
 
 public class TCPServer implements Runnable {
     private final List<ConnectionHandler> connections = new CopyOnWriteArrayList<>();
@@ -32,9 +35,9 @@ public class TCPServer implements Runnable {
     @Override
     public void run() {
         try {
-            serverSocket = new ServerSocket(8081);
+            serverSocket = new ServerSocket(8082);
             pool = Executors.newCachedThreadPool();
-            System.out.println("TCP Server started on port 8081");
+            System.out.println("TCP Server started on port 8082");
             while (!done) {
                 Socket clientSocket = serverSocket.accept();
                 ConnectionHandler handler = new ConnectionHandler(clientSocket, this);

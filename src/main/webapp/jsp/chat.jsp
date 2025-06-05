@@ -1,3 +1,6 @@
+<%--@elvariable id="username" type=""--%>
+<%--@elvariable id="ctx" type=""--%>
+<%--@elvariable id="protocol" type=""--%>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <!DOCTYPE html>
 <html lang="vi">
@@ -293,7 +296,7 @@
 
 <div class="main-chat">
     <div class="chat-header">
-        <div class="avatar" id="currentChatAvatar">A</div>
+        <div class="avatar" id="currentChatAvatar"><img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></div>
         <div class="chat-user-info">
             <div class="chat-user-name" id="currentChatName">Tên người dùng</div>
             <div class="chat-user-status" id="currentChatStatus">Trạng thái</div>
@@ -319,73 +322,82 @@
 </div>
 
 <script>
-  const ctx = '${pageContext.request.contextPath}';
-  const username = sessionStorage.getItem('username');
-  if (!username) {
-    // chưa đăng nhập -> quay về login
-    window.location.href = ctx + '/jsp/login.jsp';
-  }
+    const ctx = '${pageContext.request.contextPath}';
+    console.log("Application Context Path (ctx):", ctx);
 
-  // gọi API login 1 lần để khởi tạo currentUser
-  (async function autoLogin() {
-    const resp = await fetch(ctx + '/api/users/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'username=' + encodeURIComponent(username) + '&password='
-           + encodeURIComponent('dummy')
-    });
-    if (resp.ok) {
-      window.currentUser = await resp.json();
-      connectWebSocket(username);
-      loadUsers();
-    } else {
-      window.location.href = ctx + '/jsp/login.jsp';
-    }
-  })();
+    const usernameFromSession = sessionStorage.getItem('username'); // Đổi tên để rõ ràng hơn
 
-    let ws;
+    let ws; // Khai báo ws ở phạm vi toàn cục của script
     let currentUser = null;
     let currentChat = null;
     let isGroupChat = false;
 
-    function connectWebSocket(username) {
-        ws = new WebSocket('ws://' + location.host + ctx + '/chat?username=' + username);
-        ws.onmessage = (event) => {
-            const message = event.data;
-            if (message.startsWith('[')) {
-                const messagesContainer = document.getElementById('messagesContainer');
-                const messageDiv = document.createElement('div');
-                const sender = message.match(/\[.*?\]\s*\[(.*?)->/)[1];
-                const isSent = sender === currentUser.username;
-                messageDiv.className = 'message ' + (isSent ? 'sent' : 'other');
-                messageDiv.innerHTML =
-                    ( !isSent
-                        ? '<div class="avatar">' + sender.charAt(0).toUpperCase() + '</div>'
-                        : ''
-                    )
-                    + '<div class="message-bubble">' + message + '</div>';
-                messagesContainer.appendChild(messageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            } else {
-                alert(message);
-            }
-        };
+    if (!usernameFromSession) {
+        window.location.href = ctx + '/jsp/login.jsp';
+    } else {
+        currentUser = { username: usernameFromSession };
+        connectWebSocket(usernameFromSession); // Gọi hàm connectWebSocket với username từ session
+        loadUsers();
     }
 
-    async function loadUsers() {
+    function connectWebSocket(usernameForSocket) {
+        if (!usernameForSocket || usernameForSocket.trim() === "") {
+            console.error("Username is missing. Cannot establish WebSocket connection.");
+            return;
+        }
+
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = location.hostname || 'localhost'; // Fallback to 'localhost' if hostname is empty
+        const port = '8082'; // Ensure this matches your WebSocket server's port
+        const path = '/FinalChatting/chat'; // Include the application context path
+
+        
+        console.log("--- DEBUG WebSocket URL Components ---");
+        console.log("Protocol:", protocol);
+        console.log("Hostname:", hostname);
+        console.log("Port:", port);
+        console.log("Path:", path);
+        console.log("Username:", usernameForSocket);
+        console.log("--- End DEBUG ---");
+
+        const wsUrl = "" + protocol + "//" + hostname + ":" + port + path + "?username=" + encodeURIComponent(usernameForSocket);
+        console.log("Connecting to WebSocket:", wsUrl);
+
+        try {
+            ws = new WebSocket(wsUrl);
+        } catch (e) {
+            console.error("LỖI KHI KHỞI TẠO WEBSOCKET (trong try-catch):", e);
+            console.error("URL đã gây lỗi (trong try-catch):", wsUrl);
+            return;
+        }
+
+        ws.onopen = () => console.log("WebSocket connected");
+        ws.onerror = (event) => console.error("WebSocket error:", event);
+        ws.onclose = (event) => console.log("WebSocket closed:", event);
+    }
+
+        async function loadUsers() {
         const res = await fetch(ctx + '/api/users');
-        const users = await res.json();
+        const usersArray = await res.json(); // Đổi tên biến để rõ ràng hơn, hoặc giữ nguyên là 'users'
         const chatList = document.getElementById('chatList');
         chatList.innerHTML = '';
-        users.forEach(user => {
-            if (user.username !== currentUser.username) {
+
+        // Lặp qua mảng các ĐỐI TƯỢNG user
+        usersArray.forEach(userObject => { // Đổi 'user' thành 'userObject' để phân biệt
+            // Bây giờ userObject là một đối tượng đầy đủ, ví dụ: { username: 'mambo', id: 2, ... }
+            if (currentUser && userObject.username !== currentUser.username) {
                 const chatItem = document.createElement('div');
                 chatItem.className = 'chat-item';
-                chatItem.onclick = () => selectChat(user.username, false);
+                // Truyền userObject.username (là chuỗi) vào hàm selectChat
+                chatItem.onclick = () => selectChat(userObject.username, false);
+
+                console.log("Đang xử lý user cho danh sách (đối tượng):", userObject);
+                console.log("Giá trị userObject.username:", userObject.username);
+
                 chatItem.innerHTML = `
-                    <div class="avatar">${user.username[0].toUpperCase()}</div>
+                    <div class="avatar"><img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></div>
                     <div class="chat-info">
-                        <div class="chat-name">${user.username}</div>
+                        <div class="chat-name">${userObject.username}</div>
                         <div class="chat-preview">No recent messages</div>
                     </div>
                     <div class="chat-meta">
@@ -409,19 +421,32 @@
         currentChat = target;
         isGroupChat = isGroup;
         document.getElementById('currentChatName').textContent = target;
-        document.getElementById('currentChatAvatar').textContent = target[0].toUpperCase();
+        document.getElementById('currentChatAvatar').innerHTML = `
+        <img src="https://static.vectee.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg"
+             alt="avatar"
+             style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
         document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'Online';
         document.getElementById('messagesContainer').innerHTML = '';
-        ws.send((isGroup ? '/group' : '/chat') + ' ' + target);
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send((isGroup ? '/group' : '/chat') + ' ' + target);
+        } else {
+            console.error("Lỗi selectChat: WebSocket không ở trạng thái OPEN. Không thể gửi lệnh.");
+            alert("WebSocket connection is not open. Please try again later.");
+        }
     }
 
     function sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const messageText = messageInput.value.trim();
         if (messageText && currentChat) {
-            ws.send(messageText);
-            messageInput.value = '';
-            messageInput.style.height = 'auto';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(messageText);
+                // ... (code còn lại)
+            } else {
+                console.error("Lỗi sendMessage: WebSocket không ở trạng thái OPEN. Không thể gửi tin nhắn.");
+                // Có thể thông báo cho người dùng ở đây
+            }
         }
     }
 
@@ -438,33 +463,6 @@
     });
 
     document.getElementById('sendBtn').addEventListener('click', sendMessage);
-
-    async function login(username, password) {
-        const response = await fetch(ctx + '/api/users/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body:
-                'username=' + encodeURIComponent(username)
-                + '&password=' + encodeURIComponent(password)
-        });
-        if (response.ok) {
-            currentUser = await response.json();
-            connectWebSocket(username);
-            loadUsers();
-        } else {
-            alert('Login failed');
-        }
-    }
-
-    const username = sessionStorage.getItem('username');
-    if (username) {
-        login(username, 'password');
-    } else {
-        // nếu app deploy ở context root /FinalChatting thì:
-        // window.location.href = '/FinalChatting/jsp/login.jsp';
-        // hoặc dùng đường dẫn tương đối:
-        window.location.href = '/FinalChatting/jsp/login.jsp';
-    }
 </script>
 </body>
 </html>
