@@ -348,10 +348,10 @@
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const hostname = location.hostname || 'localhost'; // Fallback to 'localhost' if hostname is empty
-        const port = '8082'; // Ensure this matches your WebSocket server's port
+        const port = '8081'; // Ensure this matches your WebSocket server's port
         const path = '/FinalChatting/chat'; // Include the application context path
 
-        
+
         console.log("--- DEBUG WebSocket URL Components ---");
         console.log("Protocol:", protocol);
         console.log("Hostname:", hostname);

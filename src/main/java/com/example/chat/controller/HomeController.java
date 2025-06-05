@@ -15,6 +15,6 @@ public class HomeController {
     // Phương thức mới để xử lý /chat
     @GetMapping("/chat")
     public String showChatPage() {
-        return "chat"; // Spring MVC sẽ tìm /jsp/chat.jsp
+        return "chat.jsp"; // Spring MVC sẽ tìm /jsp/chat.jsp
     }
 }
