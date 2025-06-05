@@ -8,13 +8,14 @@ public class HomeController {
 
     @GetMapping("/")
     public String home() {
-        // chuyển tới /FinalChatting/chat
+        // chuyển tới /chat
         return "redirect:/chat";
     }
 
     // Phương thức mới để xử lý /chat
     @GetMapping("/chat")
     public String showChatPage() {
-        return "chat.jsp"; // Spring MVC sẽ tìm /jsp/chat.jsp
+        // Trả về view name "chat" (Spring MVC sẽ ghép prefix/suffix -> /jsp/chat.jsp)
+        return "chat";
     }
 }

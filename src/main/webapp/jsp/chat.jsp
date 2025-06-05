@@ -348,9 +348,8 @@
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const hostname = location.hostname || 'localhost'; // Fallback to 'localhost' if hostname is empty
-        const port = '8081'; // Ensure this matches your WebSocket server's port
-        const path = '/FinalChatting/chat'; // Include the application context path
-
+        const port = location.port || '8080'; // lấy port thực tế, hoặc mặc định 8080
+        const path = ctx + '/chat';          // include cả contextPath nếu cần
 
         console.log("--- DEBUG WebSocket URL Components ---");
         console.log("Protocol:", protocol);
