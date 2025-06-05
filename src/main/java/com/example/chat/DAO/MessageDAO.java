@@ -4,68 +4,47 @@ import com.example.chat.Entity.Message;
 import com.example.chat.util.HibernateUtil;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
-import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Repository
 public class MessageDAO {
-
-    public boolean saveMessage(Message message) {
-        Transaction tx = null;
+    
+    public void saveMessage(Message message) {
+        Transaction transaction = null;
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
+            transaction = session.beginTransaction();
             session.persist(message);
-            tx.commit();
-            return true;
+            transaction.commit();
+            System.out.println("Message saved successfully");
         } catch (Exception e) {
-            if (tx != null) tx.rollback();
+            if (transaction != null) {
+                transaction.rollback();
+            }
+            System.err.println("Error saving message: " + e.getMessage());
             e.printStackTrace();
-            return false;
         }
     }
 
-    public List<Message> getMessagesForUser(Long userId) {
+    public List<Message> getMessagesBetweenUsers(Long user1Id, Long user2Id) {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            String hql = "select m " +
-                         "from Message m " +
-                         "join fetch m.sender " +
-                         "where m.receiverId = :uid " +
-                         "or m.senderId = :uid " +
-                         "order by m.timeStamp asc";
-            return session.createQuery(hql, Message.class)
-                          .setParameter("uid", userId)
-                          .getResultList();
+            return session.createQuery(
+                "FROM Message m WHERE " +
+                "(m.senderId = :user1 AND m.receiverId = :user2) OR " +
+                "(m.senderId = :user2 AND m.receiverId = :user1) " +
+                "ORDER BY m.timeStamp ASC", Message.class)
+                .setParameter("user1", user1Id)
+                .setParameter("user2", user2Id)
+                .list();
         }
     }
 
-    // Get messages between two users
-    public List<Message> getMessagesBetweenUsers(Long userId1, Long userId2) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            String hql = "select m " +
-                         "from Message m " +
-                         "join fetch m.sender " +
-                         "where (m.senderId = :id1 and m.receiverId = :id2) " +
-                         "or (m.senderId = :id2 and m.receiverId = :id1) " +
-                         "order by m.timeStamp asc";
-            return session.createQuery(hql, Message.class)
-                          .setParameter("id1", userId1)
-                          .setParameter("id2", userId2)
-                          .getResultList();
-        }
-    }
-
-    // (Optional) Get messages for a group chat
     public List<Message> getMessagesForGroup(String groupName) {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            String hql = "select m " +
-                         "from Message m " +
-                         "join fetch m.sender " +
-                         "where m.groupName = :gname " +
-                         "order by m.timeStamp asc";
-            return session.createQuery(hql, Message.class)
-                          .setParameter("gname", groupName)
-                          .getResultList();
+            return session.createQuery(
+                "FROM Message m WHERE m.groupName = :groupName ORDER BY m.timeStamp ASC", 
+                Message.class)
+                .setParameter("groupName", groupName)
+                .list();
         }
     }
 }

@@ -51,4 +51,10 @@ public class UserDAO {
             return java.util.Collections.emptyList();
         }
     }
+
+    public User getUserById(Long id) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.get(User.class, id);
+        }
+    }
 }

@@ -108,8 +108,4 @@ public class Message {
     public LocalDateTime getCreatedAt() {
         return timeStamp;
     }
-
-    public void setCreatedAt(LocalDateTime timeStamp) {
-        this.timeStamp = timeStamp;
-    }
 }

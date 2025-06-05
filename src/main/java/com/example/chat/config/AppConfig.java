@@ -21,10 +21,6 @@ public class AppConfig{
         return tcpServer;
     }
 
-    @Bean
-    public ChatWebSocketHandler chatWebSocketHandler(TCPServer tcpServer) {
-        return new ChatWebSocketHandler();
-    }
 
 //    @Override
 //    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
