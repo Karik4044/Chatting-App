@@ -62,18 +62,20 @@
 </div>
 
 <script>
-  let isRequestPending = false;
+  let isRequestPending = false; // Biến để theo dõi trạng thái yêu cầu
 
+  // Hàm đăng nhập
   async function login() {
     if (isRequestPending) {
       console.log('Request already in progress, ignoring...');
       return;
     }
 
-    const ctx = '${pageContext.request.contextPath}';
-    const username = document.getElementById('username').value.trim();
+    // Lấy đường dẫn ngữ cảnh từ JSP
+    const ctx = '${pageContext.request.contextPath}'; // Đảm bảo đường dẫn được lấy đúng
+    const username = document.getElementById('username').value.trim();  // Lấy tên đăng nhập. Dùng trim() để loại bỏ khoảng trắng thừa
     const password = document.getElementById('password').value.trim();
-    const loginButton = document.querySelector('#loginForm button');
+    const loginButton = document.querySelector('#loginForm button');  // Lấy nút đăng nhập
 
     if (!username || !password) {
       alert('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu');
@@ -84,18 +86,21 @@
     loginButton.disabled = true;
     console.log('Sending:', { username, password });
 
+    // Gửi yêu cầu đăng nhập
     try {
+      //Gọi API đăng nhập
       const response = await fetch(ctx + '/api/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password)
+        method: 'POST', // Sử dụng POST để gửi dữ liệu đăng nhập
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, // Đặt header để gửi dữ liệu dạng form
+        body: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password)  // Mã hóa dữ liệu đăng nhập
       });
 
       console.log('Response status:', response.status);
-      if (response.ok) {
-        const user = await response.json();
+      // Kiểm tra phản hồi từ máy chủ
+      if (response.ok) {  // Nếu phản hồi thành công (HTTP 200)
+        const user = await response.json();   // Chuyển đổi phản hồi thành JSON
         console.log('Response data:', user);
-        if (user && user.username) {
+        if (user && user.username) {    // Kiểm tra xem dữ liệu người dùng có hợp lệ không
           sessionStorage.setItem('username', user.username);
           console.log('Stored username:', sessionStorage.getItem('username'));
           console.log('Redirecting to:', ctx + '/jsp/chat.jsp');
@@ -103,7 +108,7 @@
         } else {
           alert('Đăng nhập thất bại: Dữ liệu người dùng không hợp lệ');
         }
-      } else {
+      } else {    // Nếu phản hồi không thành công (ví dụ: HTTP 401, 404)
         const errorText = await response.text();
         console.log('Error response:', errorText);
         alert('Đăng nhập thất bại: ' + errorText);

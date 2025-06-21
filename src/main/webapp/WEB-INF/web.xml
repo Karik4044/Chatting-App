@@ -1,39 +1,52 @@
-<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="
-           http://xmlns.jcp.org/xml/ns/javaee
-           http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
-         version="4.0">
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+         https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
 
-    <session-config>
-        <session-timeout>30</session-timeout>
-    </session-config>
+    <display-name>FinalChatting</display-name>
 
-    <!-- Spring MVC Dispatcher -->
+    <!-- Context Listener to initialize TCP Server -->
+    <listener>
+        <listener-class>com.example.chat.listener.AppContextListener</listener-class>
+    </listener>
+
+    <!-- User Servlet -->
     <servlet>
-        <servlet-name>dispatcher</servlet-name>
-        <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
-        <!-- dùng Annotation‐based context -->
-        <init-param>
-            <param-name>contextClass</param-name>
-            <param-value>
-        org.springframework.web.context.support.AnnotationConfigWebApplicationContext
-      </param-value>
-        </init-param>
-        <!-- khai báo FQN của @Configuration class, bỏ ".java" và "classpath:" -->
-        <init-param>
-            <param-name>contextConfigLocation</param-name>
-            <param-value>com.example.chat.config.AppConfig</param-value>
-        </init-param>
-        <load-on-startup>1</load-on-startup>
+        <servlet-name>UserServlet</servlet-name>
+        <servlet-class>com.example.chat.servlet.UserServlet</servlet-class>
     </servlet>
     <servlet-mapping>
-        <servlet-name>dispatcher</servlet-name>
-        <url-pattern>/</url-pattern>
+        <servlet-name>UserServlet</servlet-name>
+        <url-pattern>/api/users/*</url-pattern>
     </servlet-mapping>
 
-    <!-- Khi truy cập gốc sẽ forward tới /chat, HomeController sẽ trả về view "chat" -->
+    <!-- Message Servlet -->
+    <servlet>
+        <servlet-name>MessageServlet</servlet-name>
+        <servlet-class>com.example.chat.servlet.MessageServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>MessageServlet</servlet-name>
+        <url-pattern>/api/messages/*</url-pattern>
+    </servlet-mapping>
+
+    <!-- Home Servlet -->
+    <servlet>
+        <servlet-name>HomeServlet</servlet-name>
+        <servlet-class>com.example.chat.servlet.HomeServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>HomeServlet</servlet-name>
+        <url-pattern>/</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>HomeServlet</servlet-name>
+        <url-pattern>/chat</url-pattern>
+    </servlet-mapping>
+
     <welcome-file-list>
-        <welcome-file>chat.jsp</welcome-file>
+        <welcome-file>jsp/login.jsp</welcome-file>
     </welcome-file-list>
 </web-app>

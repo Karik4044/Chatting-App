@@ -4,7 +4,6 @@ import com.example.chat.DAO.MessageDAO;
 import com.example.chat.DAO.UserDAO;
 import com.example.chat.Entity.Message;
 import com.example.chat.Entity.User;
-import com.sun.net.httpserver.HttpServer;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.*;
@@ -57,11 +56,6 @@ public class TCPServer implements Runnable {
         }
     }
 
-    public void broadcast(String message) {
-        for (ConnectionHandler ch : connections) {
-            ch.sendMessage(message);
-        }
-    }
 
     public void sendPrivate(String targetName, String message) {
         for (ConnectionHandler ch : connections) {
@@ -69,21 +63,6 @@ public class TCPServer implements Runnable {
                 ch.sendMessage(message);
                 break;
             }
-        }
-    }
-
-    public void broadcastWebSocketMessage(String username, String target, String message, boolean isGroup) {
-        String formattedMessage = String.format("[%s] [%s->%s]: %s",
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                username, target, message);
-        if (isGroup) {
-            for (ConnectionHandler ch : connections) {
-                if (ch.isGroupChat && target.equals(ch.currentChatTarget)) {
-                    ch.sendMessage(formattedMessage);
-                }
-            }
-        } else {
-            sendPrivate(target, formattedMessage);
         }
     }
 

@@ -4,11 +4,9 @@ import com.example.chat.Entity.User;
 import com.example.chat.util.HibernateUtil;
 import org.hibernate.Session;
 import org.hibernate.Transaction; // Thêm import này nếu cần dùng Transaction tường minh
-import org.springframework.stereotype.Repository;
 
 import java.util.List; // Thêm import này cho getAllUsers
 
-@Repository
 public class UserDAO {
     public boolean registerUser (String username, String passwordHash) {
         Transaction transaction = null; // Khai báo transaction
@@ -53,8 +51,14 @@ public class UserDAO {
     }
 
     public User getUserById(Long id) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            return session.get(User.class, id);
-        }
+    try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+        User user = session.get(User.class, id);
+        System.out.println("getUserById(" + id + ") result: " + (user != null ? user.getUsername() : "null"));
+        return user;
+    } catch (Exception e) {
+        System.out.println("Error in getUserById(" + id + "): " + e.getMessage());
+        e.printStackTrace();
+        return null;
     }
+}
 }

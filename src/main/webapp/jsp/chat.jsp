@@ -348,9 +348,7 @@
     const ctx = '${pageContext.request.contextPath}';
     console.log("Application Context Path (ctx):", ctx);
 
-    const usernameFromSession = sessionStorage.getItem('username'); // Đổi tên để rõ ràng hơn
-
-    let ws; // Khai báo ws ở phạm vi toàn cục của script
+    const usernameFromSession = sessionStorage.getItem('username');
     let currentUser = null;
     let currentChat = null;
     let isGroupChat = false;
@@ -359,56 +357,7 @@
         window.location.href = ctx + '/jsp/login.jsp';
     } else {
         currentUser = { username: usernameFromSession };
-        connectWebSocket(usernameFromSession); // Gọi hàm connectWebSocket với username từ session
         loadUsers();
-    }
-
-    function connectWebSocket(usernameForSocket) {
-        if (!usernameForSocket || usernameForSocket.trim() === "") {
-            console.error("Username is missing. Cannot establish WebSocket connection.");
-            return;
-        }
-
-        // Sửa lại URL để match với context path
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const hostname = location.hostname || 'localhost';
-        const port = location.port || '8083';
-        
-        // Đảm bảo context path được thêm đúng cách
-        const wsUrl = protocol + '//' + hostname + ':' + port + '/FinalChatting/chat?username=' + encodeURIComponent(usernameForSocket);
-        console.log("Connecting to WebSocket:", wsUrl);
-
-        try {
-            ws = new WebSocket(wsUrl);
-        } catch (e) {
-            console.error("Error creating WebSocket:", e);
-            return;
-        }
-
-        ws.onopen = () => {
-            console.log("WebSocket connected successfully");
-        };
-
-        ws.onmessage = (event) => {
-            console.log("Received WebSocket message:", event.data);
-            try {
-                const msg = JSON.parse(event.data);
-                if (msg.senderUsername !== usernameFromSession) {
-                    displayMessage(msg);
-                    scrollToBottom(document.getElementById('messagesContainer'));
-                }
-            } catch (e) {
-                console.error("Error parsing received message:", e);
-            }
-        };
-
-        ws.onerror = (event) => {
-            console.error("WebSocket error:", event);
-        };
-        
-        ws.onclose = (event) => {
-            console.log("WebSocket closed:", event.code, event.reason);
-        };
     }
 
     async function loadUsers() {
@@ -416,72 +365,57 @@
             const res = await fetch(ctx + '/api/users');
             if (!res.ok) {
                 console.error("Lỗi khi tải danh sách người dùng:", res.status, await res.text());
-                // Có thể hiển thị thông báo lỗi cho người dùng ở đây
                 return;
             }
             const usersArray = await res.json();
             const chatList = document.getElementById('chatList');
-            chatList.innerHTML = ''; // Xóa các mục cũ trong danh sách
+            chatList.innerHTML = '';
 
             usersArray.forEach(userObject => {
-                // Kiểm tra nếu userObject hoặc userObject.username không hợp lệ
                 if (!userObject || typeof userObject.username === 'undefined') {
                     console.warn("Bỏ qua người dùng do thiếu dữ liệu:", userObject);
-                    return; // Bỏ qua vòng lặp này nếu dữ liệu không đúng
+                    return;
                 }
 
-                // Log để kiểm tra username cụ thể đang được xử lý
-                // console.log("Đang xử lý user:", userObject.username);
-
                 if (currentUser && userObject.username !== currentUser.username) {
-                    const chatItem = document.createElement('div');
+                    const chatItem = document.createElement('div'); // ADD THIS LINE
                     chatItem.className = 'chat-item';
                     chatItem.onclick = function() {
-                        // Xoá lớp 'active' khỏi tất cả các mục chat
                         document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
-
-
                         this.classList.add('active');
-                        selectChat(userObject.username, false); // Gọi hàm selectChat với tên người dùng và isGroup là false
+                        selectChat(userObject.username, false);
                     }
 
-                    // Tạo phần tử avatar
                     const avatarDiv = document.createElement('div');
                     avatarDiv.className = 'avatar';
-                    avatarDiv.innerHTML = `<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    avatarDiv.innerHTML = '<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
 
-                    // Tạo phần tử chat-info
                     const chatInfoDiv = document.createElement('div');
                     chatInfoDiv.className = 'chat-info';
 
                     const chatNameDiv = document.createElement('div');
                     chatNameDiv.className = 'chat-name';
-                    chatNameDiv.textContent = userObject.username; // *** Gán tên bằng textContent ***
+                    chatNameDiv.textContent = userObject.username;
 
                     const chatPreviewDiv = document.createElement('div');
                     chatPreviewDiv.className = 'chat-preview';
-                    chatPreviewDiv.textContent = 'No recent messages'; // Hoặc nội dung xem trước tin nhắn
+                    chatPreviewDiv.textContent = 'No recent messages';
 
                     chatInfoDiv.appendChild(chatNameDiv);
                     chatInfoDiv.appendChild(chatPreviewDiv);
 
-                    // Tạo phần tử chat-meta
                     const chatMetaDiv = document.createElement('div');
                     chatMetaDiv.className = 'chat-meta';
-                    // chatMetaDiv.innerHTML = `<div class="chat-time"></div>`; // Thời gian có thể cập nhật sau
 
-                    // Gắn các phần tử con vào chatItem
                     chatItem.appendChild(avatarDiv);
                     chatItem.appendChild(chatInfoDiv);
                     chatItem.appendChild(chatMetaDiv);
 
-                    // Gắn chatItem vào danh sách chat
                     chatList.appendChild(chatItem);
                 }
             });
         } catch (error) {
             console.error("Đã xảy ra lỗi trong hàm loadUsers:", error);
-            // Có thể hiển thị thông báo lỗi cho người dùng ở đây
         }
     }
 
@@ -494,25 +428,24 @@
     }
 
     function selectChat(target, isGroup) {
+        console.log('selectChat called with:', { target, isGroup });
+        
         currentChat = target;
         isGroupChat = isGroup;
+        
+        console.log('Updated currentChat:', currentChat);
+        console.log('Updated isGroupChat:', isGroupChat);
+        
         document.getElementById('currentChatName').textContent = target;
-        document.getElementById('currentChatAvatar').innerHTML = `
-        <img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        document.getElementById('currentChatAvatar').innerHTML = '<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
         document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'Online';
-        document.getElementById('messagesContainer').innerHTML = '';        // clear
+        document.getElementById('messagesContainer').innerHTML = '';
 
-        // gửi lệnh chọn chat lên WS
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send((isGroup ? '/group' : '/chat') + ' ' + target);
-        }
-        // tải lịch sử chat từ REST API
         loadChatHistory(target, isGroup);
     }
 
     async function loadChatHistory(target, isGroup) {
         const container = document.getElementById('messagesContainer');
-        // thay “…” bằng "..." để tránh ký tự lạ
         container.innerHTML = '<p style="text-align:center;color:#aaa">Đang tải lịch sử...</p>';
 
         const url = ctx + '/api/messages/history' + '?currentUsername=' + encodeURIComponent(usernameFromSession) + '&targetName=' + encodeURIComponent(target) + '&isGroup=' + isGroup;
@@ -539,12 +472,11 @@
         const container = document.getElementById('messagesContainer');
         const isSent = msg.senderUsername === usernameFromSession;
 
-        // Xử lý mốc thời gian
         let messageDate = null;
         if (msg.timestamp) {
             const parsedDate = new Date(msg.timestamp);
             if (!isNaN(parsedDate)) {
-                messageDate = parsedDate.toDateString(); // Sửa lỗi chính tả: prasedDate -> parsedDate
+                messageDate = parsedDate.toDateString();
             }
         }
 
@@ -552,35 +484,29 @@
         let shouldAddDateSeparator = false;
 
         if (!lastMessage) {
-            // Tin nhắn đầu tiên
             shouldAddDateSeparator = messageDate !== null;
         } else if (lastMessage.classList.contains('date-separator')) {
-            // Tin nhắn cuối cùng là thanh ngày
             const lastDateText = lastMessage.querySelector('.date-text').textContent;
             const currentDateText = formatDateForDisplay(messageDate);
             shouldAddDateSeparator = lastDateText !== currentDateText;
         } else {
-            // Tin nhắn cuối cùng là tin nhắn thường
             const lastMessageDate = lastMessage.getAttribute('data-date');
             shouldAddDateSeparator = messageDate && messageDate !== lastMessageDate;
         }
 
-        // Thêm thanh ngày nếu cần
         if (shouldAddDateSeparator && messageDate) {
             const dateSeparator = document.createElement('div');
             dateSeparator.className = 'date-separator';
             
-            // Sử dụng innerHTML riêng biệt thay vì template literal
             const dateText = formatDateForDisplay(messageDate);
             dateSeparator.innerHTML = '<div class="date-line"></div><div class="date-text">' + dateText + '</div><div class="date-line"></div>';
             
             container.appendChild(dateSeparator);
         }
 
-        // Tạo phần tử tin nhắn
         const wrap = document.createElement('div');
         wrap.className = 'message' + (isSent ? ' sent' : '');
-        wrap.setAttribute('data-date', messageDate || ''); // Thêm data-date
+        wrap.setAttribute('data-date', messageDate || '');
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
@@ -616,7 +542,6 @@
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
 
-        // So sánh ngày (bỏ qua giờ)
         const isToday = date.toDateString() === today.toDateString();
         const isYesterday = date.toDateString() === yesterday.toDateString();
 
@@ -638,33 +563,105 @@
         el.scrollTop = el.scrollHeight;
     }
 
-    function sendMessage() {
+    // Hàm gửi tin nhắn
+    async function sendMessage() {
         const input = document.getElementById('messageInput');
         const message = input.value.trim();
-        if (!message || !currentChat) return;
 
-        const msg = {
-            content: message,
-            senderUsername: usernameFromSession,
-            targetUsername: currentChat,
-            isGroup: isGroupChat,
-            timestamp: new Date().toISOString()
-        };
-
-        // Hiển thị tin nhắn ngay lập tức cho người gửi
-        displayMessage(msg);
-
-        // Gửi tin nhắn qua WebSocket
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(msg));
-            console.log("Message sent via WebSocket:", JSON.stringify(msg));
-        } else {
-            console.error("WebSocket is not open. Cannot send message.");
+        console.log('message:', message);
+        console.log('currentChat:', currentChat);
+        console.log('usernameFromSession:', usernameFromSession);
+        console.log('isGroupChat:', isGroupChat);
+        
+        if (!message || !currentChat) {
+            console.log('Validation failed - no message or currentChat');
+            return;
         }
 
-        input.value = '';
-        input.style.height = 'auto';
-        scrollToBottom(document.getElementById('messagesContainer'));
+        if (!usernameFromSession) {
+            console.log('No username in session');
+            alert('Please login first');
+            return;
+        }
+
+        try {
+            // Thay đổi: Sử dụng URLSearchParams thay vì FormData
+            const params = new URLSearchParams();   // Sử dụng URLSearchParams để tạo chuỗi query string
+            params.append('senderUsername', usernameFromSession);
+            params.append('targetUsername', currentChat);
+            params.append('content', message);
+            params.append('isGroup', isGroupChat.toString());
+
+            console.log('Parameters to send:');
+            // Hiển thị các tham số sẽ gửi
+            // Duyệt qua các tham số và in ra console
+            for (let [key, value] of params.entries()) {
+                console.log(`  ${key}: "${value}"`);
+            }
+
+            // Hiển thị tin nhắn ngay lập tức (optimistic update)
+            const tempMsg = {
+                content: message,
+                senderUsername: usernameFromSession,
+                timestamp: new Date().toISOString()
+            };
+            displayMessage(tempMsg);
+
+            // Gửi tin nhắn đến server
+            const url = ctx + '/api/messages/send'; // Đường dẫn API để gửi tin nhắn
+            console.log('Sending POST to:', url);
+
+            // Gửi yêu cầu POST với các tham số đã mã hóa
+            const response = await fetch(url, {
+                method: 'POST', // Sử dụng phương thức POST
+                headers: {  // Thêm header Content-Type để gửi dữ liệu dạng x-www-form-urlencoded
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: params
+            });
+
+            console.log('Response status:', response.status);
+            console.log('Response ok:', response.ok);
+
+            //Nếu response không thành công, ném lỗi với thông tin chi tiết
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Server error response:', errorText);
+                throw new Error(`Failed to send message: ${response.status} - ${errorText}`);
+            }
+
+            // Nếu gửi thành công, nhận dữ liệu trả về
+            const savedMessage = await response.json();
+            console.log('Message saved successfully:', savedMessage);
+
+            // Clear input
+            input.value = '';
+            input.style.height = 'auto';
+            scrollToBottom(document.getElementById('messagesContainer'));
+
+        } catch (error) {
+            console.error('Error sending message:', error);
+            
+            // Hiển thị thông báo lỗi chi tiết cho user
+            const container = document.getElementById('messagesContainer');
+            const errorDiv = document.createElement('div');
+            errorDiv.style.textAlign = 'center';
+            errorDiv.style.color = 'red';
+            errorDiv.style.fontSize = '12px';
+            errorDiv.style.marginTop = '5px';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.backgroundColor = '#ffe6e6';
+            errorDiv.style.borderRadius = '5px';
+            errorDiv.textContent = `Lỗi gửi tin nhắn: ${error.message}`;
+            container.appendChild(errorDiv);
+            
+            // Xóa thông báo lỗi sau 5 giây
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 5000);
+        }
     }
 
     document.getElementById('messageInput').addEventListener('input', function() {
@@ -672,9 +669,9 @@
         this.style.height = Math.min(this.scrollHeight, 120) + 'px';
     });
 
-    document.getElementById('messageInput').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
+    document.getElementById('messageInput').addEventListener('keypress', function(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
             sendMessage();
         }
     });

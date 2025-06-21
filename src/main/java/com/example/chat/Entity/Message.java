@@ -79,12 +79,24 @@ public class Message {
         this.content = content;
     }
 
-    public LocalDateTime getTimeStamp() { // Đổi tên getter cho nhất quán
+    public LocalDateTime getTimeStamp() {
         return timeStamp;
     }
 
-    public void setTimeStamp(LocalDateTime timeStamp) { // Đổi tên setter cho nhất quán
+    public void setTimeStamp(LocalDateTime timeStamp) {
         this.timeStamp = timeStamp;
+    }
+
+    @Override
+    public String toString() {
+        return "Message{" +
+                "id=" + id +
+                ", senderId=" + senderId +
+                ", receiverId=" + receiverId +
+                ", groupName='" + groupName + '\'' +
+                ", content='" + content + '\'' +
+                ", timeStamp=" + timeStamp +
+                '}';
     }
 
     // Getter và Setter cho trường 'sender'
