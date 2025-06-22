@@ -23,7 +23,6 @@ public class TCPServer implements Runnable {
     private ServerSocket serverSocket;
     private boolean done = false;
     private ExecutorService pool;
-
     public TCPServer() {}
 
     @Override

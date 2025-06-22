@@ -307,9 +307,12 @@
 <div class="sidebar">
     <div class="sidebar-header">
         <h1 class="sidebar-title">Đoạn chat</h1>
+        <svg class="edit-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+        </svg>
     </div>
     <div class="search-box">
-        <input type="text" class="search-input" placeholder="Tìm kiếm" oninput="filterChatList(this.value)">
+        <input type="text" class="search-input" placeholder="Tìm kiếm trên Messenger" oninput="filterChatList(this.value)">
     </div>
     <div class="chat-list" id="chatList"></div>
 </div>
@@ -349,75 +352,15 @@
     let currentUser = null;
     let currentChat = null;
     let isGroupChat = false;
-    let lastMessageTimestamp = null;
-    let pollingInterval = null;
-    let displayedMessages = new Set(); // Track displayed messages
-    let isLoading = false; // NEW: Prevent multiple requests
+    let lastMessageTimestamp = null; // Track last message time
+    let pollingInterval = null; // Store polling interval
 
     if (!usernameFromSession) {
         window.location.href = ctx + '/jsp/login.jsp';
     } else {
         currentUser = { username: usernameFromSession };
-        loadUsers().then(() => {
-            startSSE(); // Start SSE connection after users are loaded
-        });
+        loadUsers();
     }
-
-    // Listen for SSE messages
-    function startSSE() {
-        console.log("Starting SSE connection to:", ctx + '/api/messages/sse');
-        const eventSource = new EventSource(ctx + '/api/messages/sse');
-        
-        eventSource.onopen = function(event) {
-            console.log("SSE connection opened successfully");
-        };
-        
-        eventSource.onmessage = function(event) {
-            try {
-                console.log("SSE received message:", event.data);
-                const message = JSON.parse(event.data);
-                
-                // Check if this message is for the current chat
-                if (currentChat && (message.senderUsername === currentChat || message.senderUsername === usernameFromSession)) {
-                    // Check if message is not already displayed
-                    const msgId = createMessageId(message);
-                    if (!displayedMessages.has(msgId)) {
-                        displayMessage(message);
-                        displayedMessages.add(msgId);
-                        scrollToBottom(document.getElementById('messagesContainer'));
-                    }
-                }
-            } catch (error) {
-                console.error("Error parsing SSE message:", error, "Raw data:", event.data);
-            }
-        };
-        
-        eventSource.onerror = function(event) {
-            console.error("SSE connection error:", event);
-            console.error("SSE readyState:", eventSource.readyState);
-            eventSource.close();
-            
-            // Try to reconnect after 5 seconds
-            setTimeout(() => {
-                console.log("Attempting to reconnect SSE...");
-                startSSE();
-            }, 5000);
-        };
-        
-        // Store eventSource for cleanup
-        window.currentEventSource = eventSource;
-    }
-    
-    // Clean up SSE connection when page is closed
-    window.addEventListener('beforeunload', () => {
-        if (window.currentEventSource) {
-            window.currentEventSource.close();
-        }
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            pollingInterval = null;
-        }
-    });
 
     async function loadUsers() {
         try {
@@ -488,10 +431,13 @@
 
     function selectChat(target, isGroup) {
         console.log('selectChat called with:', { target, isGroup });
+
+        // Stop polling for previous chat
+        stopPolling();
+
         currentChat = target;
         isGroupChat = isGroup;
-        lastMessageTimestamp = null;
-        displayedMessages.clear(); // Clear displayed messages when switching chat
+        lastMessageTimestamp = null; // Reset timestamp
 
         console.log('Updated currentChat:', currentChat);
         console.log('Updated isGroupChat:', isGroupChat);
@@ -501,39 +447,31 @@
         document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'Online';
         document.getElementById('messagesContainer').innerHTML = '';
 
-        loadChatHistory(target, isGroup);
+        loadChatHistory(target, isGroup).then(() => {
+            // Start polling for new messages after loading history
+            startPolling();
+        });
     }
 
     async function loadChatHistory(target, isGroup) {
-        if (isLoading) return; // Prevent multiple loads
-        isLoading = true;
-
         const container = document.getElementById('messagesContainer');
         container.innerHTML = '<p style="text-align:center;color:#aaa">Đang tải lịch sử...</p>';
 
         const url = ctx + '/api/messages/history' + '?currentUsername=' + encodeURIComponent(usernameFromSession) + '&targetName=' + encodeURIComponent(target) + '&isGroup=' + isGroup;
         console.log('Loading chat history from:', url);
-
         try {
             const res = await fetch(url);
             if (!res.ok) throw new Error('Status ' + res.status);
             const messages = await res.json();
 
             container.innerHTML = '';
-            displayedMessages.clear(); // Clear displayed messages tracking
-
             if (!messages.length) {
                 container.innerHTML = '<p style="text-align:center;color:#aaa">Chưa có tin nhắn.</p>';
                 lastMessageTimestamp = null;
                 return;
             }
 
-            messages.forEach(msg => {
-                displayMessage(msg);
-                // Track this message as displayed
-                const msgId = createMessageId(msg);
-                displayedMessages.add(msgId);
-            });
+            messages.forEach(msg => displayMessage(msg));
 
             // Update last message timestamp
             if (messages.length > 0) {
@@ -546,18 +484,62 @@
         } catch (e) {
             console.error('Lỗi tải lịch sử:', e);
             container.innerHTML = '<p style="text-align:center;color:red;">Error: ' + e.message + '</p>';
-        } finally {
-            isLoading = false;
         }
     }
 
-    // Create unique ID for message to prevent duplicates
-    function createMessageId(msg) {
-        const timestamp = msg.timestamp || msg.timeStamp || new Date().toISOString();
-        return `${msg.senderUsername}_${timestamp}_${msg.content.substring(0, 20)}`;
+    // NEW: Function to check for new messages
+    async function checkForNewMessages() {
+        if (!currentChat) return;
+
+        let url = ctx + '/api/messages/history' +
+            '?currentUsername=' + encodeURIComponent(usernameFromSession) +
+            '&targetName=' + encodeURIComponent(currentChat) +
+            '&isGroup=' + isGroupChat;
+
+        // Add timestamp filter if we have one
+        if (lastMessageTimestamp) {
+            url += '&after=' + encodeURIComponent(lastMessageTimestamp);
+        }
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) return;
+
+            const messages = await res.json();
+
+            if (messages.length > 0) {
+                console.log('Found', messages.length, 'new messages');
+
+                // Add new messages to the chat
+                messages.forEach(msg => {
+                    displayMessage(msg);
+                    lastMessageTimestamp = msg.timestamp; // Update timestamp for each new message
+                });
+
+                // Scroll to bottom to show new messages
+                scrollToBottom(document.getElementById('messagesContainer'));
+            }
+        } catch (error) {
+            console.error('Error checking for new messages:', error);
+        }
     }
 
-    // Function to check for new messages
+    // NEW: Start polling for new messages
+    function startPolling() {
+        stopPolling(); // Stop any existing polling
+        console.log('Starting polling for new messages...');
+        pollingInterval = setInterval(checkForNewMessages, 100); // Check every 0.1 seconds
+    }
+
+    // NEW: Stop polling
+    function stopPolling() {
+        if (pollingInterval) {
+            console.log('Stopping polling...');
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+    }
+
     function displayMessage(msg) {
         const container = document.getElementById('messagesContainer');
         const isSent = msg.senderUsername === usernameFromSession;
@@ -653,10 +635,8 @@
         el.scrollTop = el.scrollHeight;
     }
 
-    // Updated sendMessage function with immediate display
+    // Updated sendMessage function
     async function sendMessage() {
-        if (isLoading) return; // Prevent sending while loading
-
         const messageInput = document.getElementById('messageInput');
         const messageContent = messageInput.value.trim();
 
@@ -669,28 +649,6 @@
             return;
         }
 
-        // CREATE MESSAGE OBJECT FOR IMMEDIATE DISPLAY
-        const immediateMessage = {
-            senderUsername: usernameFromSession,
-            content: messageContent,
-            timestamp: new Date().toISOString() // Current time in ISO format
-        };
-
-        // DISPLAY MESSAGE IMMEDIATELY (optimistic UI)
-        displayMessage(immediateMessage);
-        const msgId = createMessageId(immediateMessage);
-        displayedMessages.add(msgId);
-
-        // UPDATE TIMESTAMP
-        lastMessageTimestamp = immediateMessage.timestamp;
-
-        // SCROLL TO BOTTOM
-        scrollToBottom(document.getElementById('messagesContainer'));
-
-        // Clear input immediately for better UX
-        messageInput.value = '';
-
-        // SEND TO SERVER IN BACKGROUND
         const params = new URLSearchParams();
         params.append('senderUsername', usernameFromSession);
         params.append('targetName', currentChat);
@@ -707,41 +665,25 @@
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Server returned an error:', response.status, errorText);
-
-                // SHOW INLINE ERROR MESSAGE (don't remove the displayed message)
-                const container = document.getElementById('messagesContainer');
-                const errorDiv = document.createElement('div');
-                errorDiv.style.cssText = `
-                    text-align: center;
-                    color: #ff6b6b;
-                    background: rgba(255, 107, 107, 0.1);
-                    font-size: 12px;
-                    padding: 8px 12px;
-                    margin: 8px 20px;
-                    border-radius: 8px;
-                    border: 1px solid rgba(255, 107, 107, 0.3);
-                `;
-                errorDiv.textContent = '⚠️ Failed to send message - please try again';
-                container.appendChild(errorDiv);
-
-                // Auto-remove error message after 5 seconds
-                setTimeout(() => {
-                    if (errorDiv && errorDiv.parentNode) {
-                        errorDiv.parentNode.removeChild(errorDiv);
-                    }
-                }, 5000);
-
                 throw new Error('Failed to send message.');
             }
 
-            console.log('Message sent successfully to server');
+            // Clear input
+            messageInput.value = '';
+
+            // Immediately check for new messages (including the one we just sent)
+            setTimeout(() => {
+                checkForNewMessages();
+            }, 100); // Small delay to ensure message is saved
 
         } catch (error) {
             console.error('Error sending message:', error);
-            // Error is already handled above with inline message
+            alert('Could not send message. Please check the console for more details.');
         }
     }
 
+    // Clean up polling when page is closed
+    window.addEventListener('beforeunload', stopPolling);
 
     document.getElementById('messageInput').addEventListener('input', function() {
         this.style.height = 'auto';
