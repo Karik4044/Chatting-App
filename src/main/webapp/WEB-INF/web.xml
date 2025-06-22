@@ -27,10 +27,10 @@
         <servlet-name>MessageServlet</servlet-name>
         <servlet-class>com.example.chat.servlet.MessageServlet</servlet-class>
     </servlet>
-    <servlet-mapping>
+    <!-- <servlet-mapping>
         <servlet-name>MessageServlet</servlet-name>
         <url-pattern>/api/messages/*</url-pattern>
-    </servlet-mapping>
+    </servlet-mapping> -->
 
     <!-- Home Servlet -->
     <servlet>

@@ -99,10 +99,59 @@ public class TCPServer implements Runnable {
 
                 String message;
                 while ((message = in.readLine()) != null) {
-                    handleMessage(message); // Thay đổi ở đây - gọi handleMessage thay vì logic cũ
+                    // NEW: Add a special command for the gateway to forward messages without login
+                    if (message.startsWith("/forward ")) {
+                        handleForwardCommand(message);
+                        // Since this is a one-off command from the gateway, we can close the connection.
+                        shutdown();
+                        break;
+                    } else {
+                        handleMessage(message); // Original message handling
+                    }
                 }
             } catch (IOException e) {
+                // No need to call shutdown() here as it's already in the finally block of the caller or handled inside the loop.
+            } finally {
                 shutdown();
+            }
+        }
+
+        // NEW: Handler for the /forward command
+        private void handleForwardCommand(String command) {
+            // Format: /forward <isGroup> <sender> <target> <content>
+            String[] parts = command.split(" ", 5);
+            if (parts.length < 5) {
+                System.err.println("Invalid /forward command: " + command);
+                return;
+            }
+
+            boolean isGroup = Boolean.parseBoolean(parts[1]);
+            String senderUsername = parts[2];
+            String targetName = parts[3];
+            String content = parts[4];
+
+            System.out.println("TCP Server: Forwarding message from " + senderUsername + " to " + targetName);
+
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String ts = LocalDateTime.now().format(fmt);
+
+            if (isGroup) {
+                String formattedGroupMessage = String.format("[%s] [%s->%s]: %s",
+                        ts,
+                        senderUsername,
+                        targetName,
+                        content);
+
+                // Broadcast to all connected clients currently in that group chat
+                for (ConnectionHandler ch : server.getConnections()) {
+                    if (ch.isGroupChat && targetName.equals(ch.currentChatTarget)) {
+                        ch.sendMessage(formattedGroupMessage);
+                    }
+                }
+            } else {
+                // Send to a specific user if they are connected
+                String formattedMessage = String.format("[%s] [%s]: %s", ts, senderUsername, content);
+                server.sendPrivate(targetName, formattedMessage);
             }
         }
 

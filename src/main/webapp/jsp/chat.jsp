@@ -219,7 +219,7 @@
             flex-direction: row-reverse;
         }
         .message.sent .message-bubble {
-            background: #0084ff;
+            background: #003554;
             color: white;
         }
         .message-input-container {
@@ -312,7 +312,7 @@
         </svg>
     </div>
     <div class="search-box">
-        <input type="text" class="search-input" placeholder="Tìm kiếm trên Messenger" oninput="filterChatList(this.value)">
+        <input type="text" class="search-input" placeholder="Tìm kiếm" oninput="filterChatList(this.value)">
     </div>
     <div class="chat-list" id="chatList"></div>
 </div>
@@ -322,19 +322,21 @@
         <div class="avatar" id="currentChatAvatar"><img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></div>
         <div class="chat-user-info">
             <div class="chat-user-name" id="currentChatName">Tên người dùng</div>
-            <div class="chat-user-status" id="currentChatStatus">Trạng thái</div>
+            <div class="chat-user-status" id="currentChatStatus">Vai trò</div>
         </div>
         <div class="chat-actions">
+            <%--Voice call button--%>
             <button class="action-btn">📞</button>
+            <%--Video call button--%>
             <button class="action-btn">📹</button>
-            <button class="action-btn">ℹ️</button>
         </div>
     </div>
 
     <div class="messages-container" id="messagesContainer"></div>
 
     <div class="message-input-container">
-        <button class="document-btn">📎</button>
+        <button class="action-btn" id="attachFileBtn">📎</button>
+        <input type="file" id="fileInput" style="display: none;" />
         <textarea class="message-input" id="messageInput" placeholder="Aa" rows="1"></textarea>
         <button class="send-btn" id="sendBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -354,6 +356,8 @@
     let isGroupChat = false;
     let lastMessageTimestamp = null; // Track last message time
     let pollingInterval = null; // Store polling interval
+    let isPolling = false; // Track if polling is active
+    let displayMessageIds = new Set(); // Track displayed message IDs to avoid duplicates
 
     if (!usernameFromSession) {
         window.location.href = ctx + '/jsp/login.jsp';
@@ -401,7 +405,6 @@
 
                     const chatPreviewDiv = document.createElement('div');
                     chatPreviewDiv.className = 'chat-preview';
-                    chatPreviewDiv.textContent = 'No recent messages';
 
                     chatInfoDiv.appendChild(chatNameDiv);
                     chatInfoDiv.appendChild(chatPreviewDiv);
@@ -438,13 +441,14 @@
         currentChat = target;
         isGroupChat = isGroup;
         lastMessageTimestamp = null; // Reset timestamp
+        displayMessageIds.clear(); // Clear displayed message IDs
 
         console.log('Updated currentChat:', currentChat);
         console.log('Updated isGroupChat:', isGroupChat);
 
         document.getElementById('currentChatName').textContent = target;
         document.getElementById('currentChatAvatar').innerHTML = '<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
-        document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'Online';
+        document.getElementById('currentChatStatus').textContent = isGroup ? 'Group chat' : 'User';
         document.getElementById('messagesContainer').innerHTML = '';
 
         loadChatHistory(target, isGroup).then(() => {
@@ -487,48 +491,61 @@
         }
     }
 
+    function isScrolledToBottom(el) {
+        if (!el) return false;
+        const tolerance = 5;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < tolerance;
+    }
     // NEW: Function to check for new messages
     async function checkForNewMessages() {
-        if (!currentChat) return;
-
-        let url = ctx + '/api/messages/history' +
-            '?currentUsername=' + encodeURIComponent(usernameFromSession) +
-            '&targetName=' + encodeURIComponent(currentChat) +
-            '&isGroup=' + isGroupChat;
-
-        // Add timestamp filter if we have one
-        if (lastMessageTimestamp) {
-            url += '&after=' + encodeURIComponent(lastMessageTimestamp);
-        }
-
-        try {
-            const res = await fetch(url);
-            if (!res.ok) return;
-
-            const messages = await res.json();
-
-            if (messages.length > 0) {
-                console.log('Found', messages.length, 'new messages');
-
-                // Add new messages to the chat
-                messages.forEach(msg => {
-                    displayMessage(msg);
-                    lastMessageTimestamp = msg.timestamp; // Update timestamp for each new message
-                });
-
-                // Scroll to bottom to show new messages
-                scrollToBottom(document.getElementById('messagesContainer'));
+            if (!currentChat || isPolling) {
+                return; // Exit if no chat is selected or if a check is already running
             }
-        } catch (error) {
-            console.error('Error checking for new messages:', error);
+
+            isPolling = true; // Lock to prevent other polls
+
+            const container = document.getElementById('messagesContainer');
+            const shouldScroll = isScrolledToBottom(container);
+
+            let url = ctx + '/api/messages/history' +
+                '?currentUsername=' + encodeURIComponent(usernameFromSession) +
+                '&targetName=' + encodeURIComponent(currentChat) +
+                '&isGroup=' + isGroupChat;
+
+            if (lastMessageTimestamp) {
+                url += '&after=' + encodeURIComponent(lastMessageTimestamp);
+            }
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    console.error("Failed to fetch new messages, status:", response.status);
+                    return;
+                }
+                const newMessages = await response.json();
+
+                if (newMessages && newMessages.length > 0) {
+                    newMessages.forEach(msg => {
+                        displayMessage(msg);
+                    });
+                    lastMessageTimestamp = newMessages[newMessages.length - 1].timestamp;
+
+                    if (shouldScroll) {
+                        scrollToBottom(container);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking for new messages:', error);
+            } finally {
+                isPolling = false; // Always unlock, even if an error occurs
+            }
         }
-    }
 
     // NEW: Start polling for new messages
     function startPolling() {
         stopPolling(); // Stop any existing polling
         console.log('Starting polling for new messages...');
-        pollingInterval = setInterval(checkForNewMessages, 100); // Check every 0.1 seconds
+        pollingInterval = setInterval(checkForNewMessages, 1000); // Check every 0.1 seconds
     }
 
     // NEW: Stop polling
@@ -541,9 +558,18 @@
     }
 
     function displayMessage(msg) {
+        // Tạo một khóa duy nhất cho mỗi tin nhắn dựa trên timestamp, senderUsername và nội dung
+        // Tránh hiển thị tin nhắn trùng lặp polling
+        const messageKey = msg.timestamp + '-' + msg.senderUsername + '-' + msg.content;
+        if (displayMessageIds.has(messageKey)) {
+            return; // Skip if this message is already displayed.
+        }
+        displayMessageIds.add(messageKey); // Remember that this message has been displayed.
+
         const container = document.getElementById('messagesContainer');
         const isSent = msg.senderUsername === usernameFromSession;
 
+        // Add a date separator if the day has changed
         let messageDate = null;
         if (msg.timestamp) {
             const parsedDate = new Date(msg.timestamp);
@@ -569,10 +595,8 @@
         if (shouldAddDateSeparator && messageDate) {
             const dateSeparator = document.createElement('div');
             dateSeparator.className = 'date-separator';
-
             const dateText = formatDateForDisplay(messageDate);
-            dateSeparator.innerHTML = '<div class="date-line"></div><div class="date-text">' + dateText + '</div><div class="date-line"></div>';
-
+            dateSeparator.innerHTML = `<div class="date-line"></div><div class="date-text">${dateText}</div><div class="date-line"></div>`;
             container.appendChild(dateSeparator);
         }
 
@@ -582,8 +606,62 @@
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
-        bubble.textContent = msg.content;
 
+        if (msg.content && msg.content.startsWith('[file:') && msg.content.endsWith(']')) {
+            // Handle file messages
+            const fullPath = msg.content.substring(6, msg.content.length - 1);
+            const fileName = fullPath.substring(fullPath.lastIndexOf('/') + 1);
+            const originalFileName = fileName.substring(fileName.indexOf('_') + 1);
+            const ext = (originalFileName.split('.').pop() || '').toLowerCase();
+
+            const fileContainer = document.createElement('div');
+            fileContainer.style.display = 'flex';
+            fileContainer.style.alignItems = 'center';
+            fileContainer.style.gap = '8px';
+
+            const icon = document.createElement('span');
+            icon.style.fontSize = '2em';
+            icon.style.lineHeight = '1';
+
+            // Set icon based on file type
+            if (['txt', 'md', 'doc', 'docx', 'pdf', 'pptx', 'xlsx'].includes(ext)) {
+                icon.textContent = '📄';
+            } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
+                icon.textContent = '🖼️';
+            } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
+                icon.textContent = '🎵';
+            } else if (['mp4', 'avi', 'mov', 'mkv'].includes(ext)) {
+                icon.textContent = '🎬';
+            } else {
+                icon.textContent = '📦';
+            }
+
+            const link = document.createElement('a');
+            link.href = ctx + '/download?fileName=' + encodeURIComponent(fileName);
+            link.download = originalFileName;
+            link.textContent = originalFileName;
+            link.style.textDecoration = 'none';
+            link.style.wordBreak = 'break-all';
+
+            // Set icon and link color based on sender for consistency
+            if (isSent) {
+                icon.style.color = '#ffffff';
+                link.style.color = '#ffffff';
+            } else {
+                icon.style.color = '#e0e0e0';
+                link.style.color = '#8ab4f8'; // Light blue for links on dark background
+            }
+
+            fileContainer.appendChild(icon);
+            fileContainer.appendChild(link);
+            bubble.appendChild(fileContainer);
+
+        } else {
+            // Handle regular text messages
+            bubble.textContent = msg.content || 'No content';
+        }
+
+        // Add timestamp to the bubble
         const time = document.createElement('div');
         time.style.fontSize = '0.75em';
         time.style.color = isSent ? '#e0e0e0' : '#aaa';
@@ -698,6 +776,59 @@
     });
 
     document.getElementById('sendBtn').addEventListener('click', sendMessage);
+
+    //Send file btn
+    document.getElementById('attachFileBtn').addEventListener('click', () => {
+        document.getElementById('fileInput').click();
+    });
+
+    document.getElementById('fileInput').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            sendFile(file);
+        }
+        // Reset input to allow selecting the same file again
+        this.value = '';
+    });
+
+    async function sendFile(file) {
+        if (!currentChat) {
+            alert("Please select a chat first.");
+            return;
+        }
+
+        // You can add file size validation here
+        // if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        //     alert("File is too large (max 10MB).");
+        //     return;
+        // }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('senderUsername', usernameFromSession);
+        formData.append('targetName', currentChat);
+        formData.append('isGroup', isGroupChat);
+
+        try {
+            // Note: You will need to create a new servlet endpoint (e.g., /api/messages/upload)
+            // to handle the multipart/form-data request on the server.
+            const response = await fetch(ctx + '/api/messages/upload', {
+                method: 'POST',
+                body: formData, // The browser will set the correct 'Content-Type' for FormData
+            });
+
+            if (!response.ok) {
+                throw new Error('File upload failed: ' + await response.text());
+            }
+
+            // Refresh chat to show the new file message
+            setTimeout(() => checkForNewMessages(), 250);
+
+        } catch (error) {
+            console.error('Error sending file:', error);
+            alert('Could not send file. See console for details.');
+        }
+    }
 </script>
 </body>
 </html>
