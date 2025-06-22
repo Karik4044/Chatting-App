@@ -23,13 +23,8 @@ public class TCPServer implements Runnable {
     private ServerSocket serverSocket;
     private boolean done = false;
     private ExecutorService pool;
-    private WebSocketMessageHandler webSocketHandler;
 
     public TCPServer() {}
-
-    public void setWebSocketHandler(WebSocketMessageHandler handler) {
-        this.webSocketHandler = handler;
-    }
 
     @Override
     public void run() {
@@ -80,10 +75,6 @@ public class TCPServer implements Runnable {
         return connections;
     }
 
-    public interface WebSocketMessageHandler {
-        void sendMessageToWebSocket(String username, String target, String message, boolean isGroup);
-    }
-
     public static class ConnectionHandler implements Runnable {
         private final Socket clientSocket;
         private final TCPServer server;
@@ -107,23 +98,16 @@ public class TCPServer implements Runnable {
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
 
-                out.println("Welcome to the chat server!");
-                out.println("Please /register <username> <password> or /login <username> <password> to continue.");
-
                 String message;
                 while ((message = in.readLine()) != null) {
-                    if (!authenticated) {
-                        handleAuth(message);
-                    } else {
-                        handleChat(message);
-                    }
+                    handleMessage(message); // Thay đổi ở đây - gọi handleMessage thay vì logic cũ
                 }
             } catch (IOException e) {
                 shutdown();
             }
         }
 
-        private void loadChatHistory() {
+        public void loadChatHistory() {
             out.println("=== Chat history with " + currentChatTarget + " ===");
             List<Message> history;
             User target = null;
@@ -139,23 +123,23 @@ public class TCPServer implements Runnable {
             }
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             for (Message m : history) {
-                boolean sentByMe = !isGroupChat && target != null && m.getSenderId().equals(currentUser.getId()) && m.getReceiverId().equals(target.getId());
-                boolean receivedByMe = !isGroupChat && target != null && m.getSenderId().equals(target.getId()) && m.getReceiverId().equals(currentUser.getId());
-                if (isGroupChat || sentByMe || receivedByMe) {
-                    String sender = m.getSenderId().equals(currentUser.getId()) ? "You" : m.getSenderUsername();
-                    String arrow = "";
-                    if (!isGroupChat && m.getSenderId().equals(currentUser.getId())) {
-                        arrow = "->" + currentChatTarget;
-                    } else if (isGroupChat) {
-                        arrow = "->" + currentChatTarget;
-                    }
+                // FIX: Use the sender object (m.getSender()) which was fetched by the DAO.
+                // This is the correct way to access sender's information.
+                String senderUsername = m.getSender() != null ? m.getSender().getUsername() : "unknown";
+                String senderDisplayName = m.getSender().getId().equals(currentUser.getId()) ? "You" : senderUsername;
 
-                    out.println(String.format("[%s] [%s%s]: %s",
-                            m.getCreatedAt().format(fmt),
-                            sender,
-                            arrow,
-                            m.getContent()));
+                String arrow = "";
+                if (!isGroupChat) {
+                    arrow = "->" + currentChatTarget;
+                } else {
+                    arrow = "->" + currentChatTarget; // For group
                 }
+
+                out.println(String.format("[%s] [%s%s]: %s",
+                        m.getTimeStamp().format(fmt), // FIX: Use getTimeStamp() for consistency
+                        senderDisplayName,
+                        arrow,
+                        m.getContent()));
             }
         }
 
@@ -173,13 +157,13 @@ public class TCPServer implements Runnable {
                     }
                     String regUser = parts[1], regPass = parts[2];
                     if (userDAO.getUserByUsername(regUser) != null) {
-                        out.println("Username already exists.");
+                        out.println("ERROR: Username already exists.");
                     } else {
                         String hash = BCrypt.hashpw(regPass, BCrypt.gensalt());
                         if (userDAO.registerUser(regUser, hash)) {
-                            out.println("Registration successful. Please /login <username> <password>.");
+                            out.println("SUCCESS: Registration successful.");
                         } else {
-                            out.println("Registration failed. Try again.");
+                            out.println("ERROR: Registration failed.");
                         }
                     }
 
@@ -196,20 +180,38 @@ public class TCPServer implements Runnable {
                         authenticated = true;
                         currentUser = user;
                         username = user.getUsername();
-                        out.println("Login successful! Welcome, " + username);
+                        out.println("SUCCESS: Login successful! Welcome, " + username);
                         server.broadcastGlobal(username + " Online!");
-                        out.println("Type /chat <username> to start a private chat or /group <groupname> for group chat.");
                     } else {
-                        out.println("Login failed. Invalid username or password.");
+                        out.println("ERROR: Login failed. Invalid username or password.");
                     }
-
-                } else {
-                    out.println("Please /register or /login to continue.");
                 }
             } catch (Exception e) {
-                out.println("Error during authentication: " + e.getMessage());
-                e.printStackTrace();
+                out.println("ERROR: " + e.getMessage());
             }
+        }
+
+        private void handleMessage(String message) {
+            if (message == null || message.trim().isEmpty()) {
+                return;
+            }
+
+            message = message.trim();
+            System.out.println("Received: " + message + " from " + (username != null ? username : "unauthenticated user"));
+
+            // Cho phép /users command mà không cần authenticate
+            if (message.equals("/users")) {
+                handleGetUsers();
+                return;
+            }
+
+            if (!authenticated) {
+                handleAuth(message);
+                return;
+            }
+
+            // Gọi handleChat cho các message khác khi đã authenticated
+            handleChat(message);
         }
 
         private void handleChat(String message) {
@@ -228,6 +230,7 @@ public class TCPServer implements Runnable {
                 }
                 return;
             }
+            
             if (message.startsWith("/group ")) {
                 String groupName = message.substring(7).trim();
                 currentChatTarget = groupName;
@@ -246,8 +249,12 @@ public class TCPServer implements Runnable {
             String ts = LocalDateTime.now().format(fmt);
 
             if (isGroupChat) {
-                Message groupMsg = new Message(currentUser.getId(), null, message);
+                // FIX: Create and save group messages correctly
+                Message groupMsg = new Message();
+                groupMsg.setSender(currentUser); // Set the full User object
                 groupMsg.setGroupName(currentChatTarget);
+                groupMsg.setContent(message);
+                groupMsg.setTimeStamp(LocalDateTime.now());
                 new MessageDAO().saveMessage(groupMsg);
 
                 String formattedGroupMessage = String.format("[%s] [%s->%s]: %s",
@@ -262,9 +269,6 @@ public class TCPServer implements Runnable {
                     }
                 }
 
-                if (server.webSocketHandler != null) {
-                    server.webSocketHandler.sendMessageToWebSocket(username, currentChatTarget, message, true);
-                }
             } else {
                 User targetUser = userDAO.getUserByUsername(currentChatTarget);
                 if (targetUser == null) {
@@ -272,16 +276,42 @@ public class TCPServer implements Runnable {
                     currentChatTarget = null;
                     return;
                 }
-                Message privateMsg = new Message(currentUser.getId(), targetUser.getId(), message);
+                // FIX: Create Message object correctly by setting the sender User object.
+                // This is the main reason messages were not saving from the TCP client.
+                Message privateMsg = new Message();
+                privateMsg.setSender(currentUser);
+                privateMsg.setReceiverId(targetUser.getId());
+                privateMsg.setContent(message);
+                privateMsg.setTimeStamp(LocalDateTime.now());
                 new MessageDAO().saveMessage(privateMsg);
 
                 String formattedMessage = String.format("[%s] [%s]: %s", ts, currentUser.getUsername(), message);
                 server.sendPrivate(targetUser.getUsername(), formattedMessage);
                 out.println(String.format("[%s] [You->%s]: %s", ts, targetUser.getUsername(), message));
+            }
+        }
 
-                if (server.webSocketHandler != null) {
-                    server.webSocketHandler.sendMessageToWebSocket(username, currentChatTarget, message, false);
+        private void handleGetUsers() {
+            try {
+                List<User> users = userDAO.getAllUsers();
+                StringBuilder response = new StringBuilder("[");
+                
+                for (int i = 0; i < users.size(); i++) {
+                    User user = users.get(i);
+                    response.append("{\"id\":").append(user.getId())
+                           .append(",\"username\":\"").append(user.getUsername()).append("\"}");
+                    if (i < users.size() - 1) {
+                        response.append(",");
+                    }
                 }
+                response.append("]");
+                
+                out.println(response.toString());
+                System.out.println("Sent users list to client: " + response.toString());
+                
+            } catch (Exception e) {
+                e.printStackTrace();
+                out.println("ERROR: Failed to get users - " + e.getMessage());
             }
         }
 

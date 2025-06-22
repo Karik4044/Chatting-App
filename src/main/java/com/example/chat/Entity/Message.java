@@ -10,9 +10,6 @@ public class Message {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "senderid", nullable = false)
-    private Long senderId;
-
     @Column(name = "receiverid")
     private Long receiverId;
 
@@ -23,16 +20,16 @@ public class Message {
     private String content;
 
     @Column(name = "timestamp", nullable = false)
-    private LocalDateTime timeStamp; // Đổi tên từ createdAt để nhất quán với constructor và getter/setter
+    private LocalDateTime timeStamp;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Nên là EAGER nếu bạn luôn muốn lấy thông tin User sender
-    @JoinColumn(name = "senderid", referencedColumnName = "id", insertable = false, updatable = false)
+    // FIX: Sử dụng @JoinColumn với insertable=true và updatable=true
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "senderid", referencedColumnName = "id")
     private User sender;
 
     public Message() { }
 
     public Message(Long senderId, Long receiverId, String content) {
-        this.senderId = senderId;
         this.receiverId = receiverId;
         this.content = content;
         this.timeStamp = LocalDateTime.now();
@@ -47,12 +44,11 @@ public class Message {
         this.id = id;
     }
 
+    // FIX: Xóa getSenderId và setSenderId để tránh xung đột
+    // Thay vào đó sử dụng sender.getId()
+    @Transient
     public Long getSenderId() {
-        return senderId;
-    }
-
-    public void setSenderId(Long senderId) {
-        this.senderId = senderId;
+        return sender != null ? sender.getId() : null;
     }
 
     public Long getReceiverId() {
@@ -87,19 +83,6 @@ public class Message {
         this.timeStamp = timeStamp;
     }
 
-    @Override
-    public String toString() {
-        return "Message{" +
-                "id=" + id +
-                ", senderId=" + senderId +
-                ", receiverId=" + receiverId +
-                ", groupName='" + groupName + '\'' +
-                ", content='" + content + '\'' +
-                ", timeStamp=" + timeStamp +
-                '}';
-    }
-
-    // Getter và Setter cho trường 'sender'
     public User getSender() {
         return sender;
     }
@@ -110,14 +93,22 @@ public class Message {
 
     @Transient
     public String getSenderUsername() {
-        // Phương thức này vẫn hữu ích và có thể giữ lại
-        // Nó sẽ hoạt động đúng nếu đối tượng 'sender' đã được load
         return sender != null ? sender.getUsername() : null;
     }
 
-    // Đổi tên getCreatedAt và setCreatedAt thành getTimeStamp và setTimeStamp cho nhất quán
-    // Nếu bạn vẫn muốn giữ getCreatedAt, bạn có thể tạo thêm một getter nữa trỏ về timeStamp
     public LocalDateTime getCreatedAt() {
         return timeStamp;
+    }
+
+    @Override
+    public String toString() {
+        return "Message{" +
+                "id=" + id +
+                ", senderId=" + getSenderId() +
+                ", receiverId=" + receiverId +
+                ", groupName='" + groupName + '\'' +
+                ", content='" + content + '\'' +
+                ", timeStamp=" + timeStamp +
+                '}';
     }
 }
