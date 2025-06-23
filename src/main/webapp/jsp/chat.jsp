@@ -1,3 +1,4 @@
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%--@elvariable id="username" type=""--%>
 <%--@elvariable id="ctx" type=""--%>
 <%--@elvariable id="protocol" type=""--%>
@@ -8,6 +9,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Giao diện Chat</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         * {
             margin: 0;
@@ -196,7 +198,7 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 24px;
         }
         .message {
             display: flex;
@@ -214,6 +216,17 @@
             border-radius: 16px;
             max-width: 70%;
             word-wrap: break-word;
+            position: relative;
+        }
+
+        /* Styles for sender name in group chat */
+        .message-bubble .sender-name {
+            position: absolute;
+            top: -18px;
+            left: 12px;
+            font-size: 0.75em;
+            color: #aaaaaa;
+            white-space: nowrap;
         }
         .message.sent {
             flex-direction: row-reverse;
@@ -302,14 +315,17 @@
             white-space: nowrap;
         }
     </style>
+    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/call.css" type="text/css">
 </head>
 <body>
 <div class="sidebar">
     <div class="sidebar-header">
         <h1 class="sidebar-title">Đoạn chat</h1>
+        <!-- Nút tạo nhóm chat  -->
         <svg class="edit-icon" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-        </svg>
+        </svg> 
+        
     </div>
     <div class="search-box">
         <input type="text" class="search-input" placeholder="Tìm kiếm" oninput="filterChatList(this.value)">
@@ -325,17 +341,15 @@
             <div class="chat-user-status" id="currentChatStatus">Vai trò</div>
         </div>
         <div class="chat-actions">
-            <%--Voice call button--%>
-            <button class="action-btn">📞</button>
-            <%--Video call button--%>
-            <button class="action-btn">📹</button>
+            <button id="voiceCallBtn" class="action-btn"><i class="bi bi-telephone"></i></button>
+            <button id="videoCallBtn" class="action-btn"><i class="bi bi-camera-video"></i></button>
         </div>
     </div>
 
     <div class="messages-container" id="messagesContainer"></div>
 
     <div class="message-input-container">
-        <button class="action-btn" id="attachFileBtn">📎</button>
+        <button class="action-btn" id="attachFileBtn"><i class="bi bi-file-earmark-fill"></i></button>
         <input type="file" id="fileInput" style="display: none;" />
         <textarea class="message-input" id="messageInput" placeholder="Aa" rows="1"></textarea>
         <button class="send-btn" id="sendBtn">
@@ -346,6 +360,27 @@
     </div>
 </div>
 
+<div id="call-container" class="hidden">
+    <!-- Call UI will be dynamically created by JavaScript -->
+</div>
+
+<!-- Video elements for WebRTC -->
+<video id="remote-video" autoplay playsinline style="display: none;"></video>
+<video id="local-video" autoplay playsinline muted style="display: none;"></video>
+
+<!-- Modal tạo nhóm -->
+<div id="createGroupModal" style="display:none; position:fixed; z-index:1001; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
+  <div style="background:#222; padding:24px; border-radius:12px; min-width:300px;">
+    <h3 style="margin-bottom:12px;">Tạo nhóm chat mới</h3>
+    <input id="groupNameInput" type="text" placeholder="Tên nhóm" style="width:100%;padding:8px;border-radius:6px;border:none;margin-bottom:12px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeGroupModal()" style="padding:6px 16px;border:none;border-radius:6px;background:#555;color:#fff;">Hủy</button>
+      <button onclick="createGroup()" style="padding:6px 16px;border:none;border-radius:6px;background:#0084ff;color:#fff;">Tạo</button>
+    </div>
+  </div>
+</div>
+
+<script src="${pageContext.request.contextPath}/js/webrtc.js"></script>
 <script>
     const ctx = '${pageContext.request.contextPath}';
     console.log("Application Context Path (ctx):", ctx);
@@ -359,12 +394,46 @@
     let isPolling = false; // Track if polling is active
     let displayMessageIds = new Set(); // Track displayed message IDs to avoid duplicates
 
-    if (!usernameFromSession) {
-        window.location.href = ctx + '/jsp/login.jsp';
-    } else {
-        currentUser = { username: usernameFromSession };
-        loadUsers();
+    // Function to initialize the application after webrtc.js is loaded
+    function initializeApp() {
+        if (!usernameFromSession) {
+            window.location.href = ctx + '/jsp/login.jsp';
+        } else {
+            currentUser = { username: usernameFromSession };
+            loadUsers();
+            loadGroups();
+            
+            // Check if initWebRTC is available
+            if (typeof initWebRTC === 'function') {
+                initWebRTC(usernameFromSession); // Initialize WebRTC
+            } else {
+                console.error('initWebRTC function not found. WebRTC functionality will not be available.');
+            }
+        }
     }
+
+    // Wait for webrtc.js to load with timeout
+    let webrtcLoadAttempts = 0;
+    const maxAttempts = 50; // 5 seconds timeout (50 * 100ms)
+    
+    function waitForWebRTC() {
+        webrtcLoadAttempts++;
+        
+        if (typeof initWebRTC === 'function') {
+            console.log('WebRTC loaded successfully');
+            initializeApp();
+        } else if (webrtcLoadAttempts < maxAttempts) {
+            // Check again after a short delay
+            setTimeout(waitForWebRTC, 100);
+        } else {
+            console.error('WebRTC failed to load after 5 seconds. Call functionality will not be available.');
+            // Initialize app without WebRTC
+            initializeApp();
+        }
+    }
+
+    // Start waiting for webrtc.js to load
+    waitForWebRTC();
 
     async function loadUsers() {
         try {
@@ -375,7 +444,8 @@
             }
             const usersArray = await res.json();
             const chatList = document.getElementById('chatList');
-            chatList.innerHTML = '';
+            // XÓA CHỈ CÁC USER ITEM, KHÔNG XÓA GROUP
+            chatList.querySelectorAll('.chat-item:not(.chat-group-item)').forEach(e => e.remove());
 
             usersArray.forEach(userObject => {
                 if (!userObject || typeof userObject.username === 'undefined') {
@@ -596,7 +666,7 @@
             const dateSeparator = document.createElement('div');
             dateSeparator.className = 'date-separator';
             const dateText = formatDateForDisplay(messageDate);
-            dateSeparator.innerHTML = `<div class="date-line"></div><div class="date-text">${dateText}</div><div class="date-line"></div>`;
+            dateSeparator.innerHTML = `<div class="date-line"></div><div class="date-text">\${dateText}</div><div class="date-line"></div>`;
             container.appendChild(dateSeparator);
         }
 
@@ -607,6 +677,22 @@
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
 
+        //Chức năng hiển thị avatar
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.innerHTML = '<img src="https://static.vecteezy.com/system/resources/previews/009/292/244/non_2x/default-avatar-icon-of-social-media-user-vector.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
+        wrap.appendChild(avatar);
+
+        //Hiển thị tên phía trên góc bong bóng chat
+        if (isGroupChat && !isSent) {
+            const senderName = document.createElement('div');
+            senderName.className = 'sender-name'; /* Áp dụng class cho styling */
+            senderName.textContent = msg.senderUsername;
+            bubble.appendChild(senderName); // Thêm tên người gửi VÀO bubble
+        }
+
+
+        //Chức năng gửi file
         if (msg.content && msg.content.startsWith('[file:') && msg.content.endsWith(']')) {
             // Handle file messages
             const fullPath = msg.content.substring(6, msg.content.length - 1);
@@ -625,15 +711,15 @@
 
             // Set icon based on file type
             if (['txt', 'md', 'doc', 'docx', 'pdf', 'pptx', 'xlsx'].includes(ext)) {
-                icon.textContent = '📄';
+                icon.innerHTML = '<i class="bi bi-file-earmark-text-fill"></i>';
             } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
-                icon.textContent = '🖼️';
+                icon.innerHTML = '<i class="bi bi-image"></i>';
             } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
-                icon.textContent = '🎵';
+                icon.innerHTML = '<i class="bi bi-file-earmark-music-fill"></i>';
             } else if (['mp4', 'avi', 'mov', 'mkv'].includes(ext)) {
-                icon.textContent = '🎬';
+                icon.innerHTML = '<i class="bi bi-file-earmark-play-fill"></i>';
             } else {
-                icon.textContent = '📦';
+                icon.innerHTML = '<i class="bi bi-file-earmark-fill"></i>'; // Default icon for unknown types
             }
 
             const link = document.createElement('a');
@@ -644,13 +730,8 @@
             link.style.wordBreak = 'break-all';
 
             // Set icon and link color based on sender for consistency
-            if (isSent) {
-                icon.style.color = '#ffffff';
-                link.style.color = '#ffffff';
-            } else {
-                icon.style.color = '#e0e0e0';
-                link.style.color = '#8ab4f8'; // Light blue for links on dark background
-            }
+            icon.style.color = '#e0e0e0';
+            link.style.color = '#8ab4f8'; // Light blue for links on dark background
 
             fileContainer.appendChild(icon);
             fileContainer.appendChild(link);
@@ -658,7 +739,11 @@
 
         } else {
             // Handle regular text messages
-            bubble.textContent = msg.content || 'No content';
+            //Tạo 1 phần tử span riêng để hiển thị nội dung tin nhắn
+            //Tránh ghi đè lên các phần tử khác như avatar, tên người gửi
+            const msgContent = document.createElement('span');  // Create a span for the message content
+            msgContent.textContent = msg.content || 'No content';   // Use 'No content' if msg.content is empty
+            bubble.appendChild(msgContent); // Append the message content to the bubble
         }
 
         // Add timestamp to the bubble
@@ -709,8 +794,59 @@
         }
     }
 
+    // Hàm cuộn xuống cuối của một phần tử
     function scrollToBottom(el) {
         el.scrollTop = el.scrollHeight;
+    }
+
+    // Hàm hiển thị thông báo của người dùng trong chức năng gọi
+    function showNotification(title, message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        
+        // Set background color based on type
+        let backgroundColor;
+        switch (type) {
+            case 'success':
+                backgroundColor = '#28a745';
+                break;
+            case 'error':
+                backgroundColor = '#dc3545';
+                break;
+            case 'warning':
+                backgroundColor = '#ffc107';
+                break;
+            default:
+                backgroundColor = '#17a2b8';
+        }
+        
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${backgroundColor};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1002;
+            max-width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        `;
+        
+        notification.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 5px;">${title}</div>
+            <div style="font-size: 14px;">${message}</div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
     }
 
     // Updated sendMessage function
@@ -775,6 +911,7 @@
         }
     });
 
+    // Send message button
     document.getElementById('sendBtn').addEventListener('click', sendMessage);
 
     //Send file btn
@@ -782,6 +919,7 @@
         document.getElementById('fileInput').click();
     });
 
+    //Sử dụng input file để gửi file
     document.getElementById('fileInput').addEventListener('change', function(event) {
         const file = event.target.files[0];
         if (file) {
@@ -791,20 +929,15 @@
         this.value = '';
     });
 
+    //Chức năng gửi file
     async function sendFile(file) {
         if (!currentChat) {
             alert("Please select a chat first.");
             return;
         }
 
-        // You can add file size validation here
-        // if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        //     alert("File is too large (max 10MB).");
-        //     return;
-        // }
-
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', file);  // Append the file to the FormData object
         formData.append('senderUsername', usernameFromSession);
         formData.append('targetName', currentChat);
         formData.append('isGroup', isGroupChat);
@@ -829,6 +962,114 @@
             alert('Could not send file. See console for details.');
         }
     }
+    // Event Listeners for Calling
+    document.getElementById('voiceCallBtn').addEventListener('click', () => {
+        if (!currentChat) {
+            showNotification('Cuộc gọi', 'Vui lòng chọn người dùng để gọi', 'warning');
+            return;
+        }
+        
+        // Check if WebRTC functions are available
+        if (typeof startCall === 'function') {
+            startCall(currentChat, false); // false for voice-only call
+        } else {
+            showNotification('Cuộc gọi', 'Chức năng gọi không khả dụng. Vui lòng tải lại trang.', 'error');
+        }
+    });
+
+    document.getElementById('videoCallBtn').addEventListener('click', () => {
+        if (!currentChat) {
+            showNotification('Cuộc gọi', 'Vui lòng chọn người dùng để gọi', 'warning');
+            return;
+        }
+        
+        // Check if WebRTC functions are available
+        if (typeof startCall === 'function') {
+            startCall(currentChat, true); // true for video call
+        } else {
+            showNotification('Cuộc gọi', 'Chức năng gọi không khả dụng. Vui lòng tải lại trang.', 'error');
+        }
+    });
+
+    // Hiện modal khi click icon tạo nhóm
+    document.querySelector('.edit-icon').addEventListener('click', function() {
+        document.getElementById('createGroupModal').style.display = 'flex';
+        document.getElementById('groupNameInput').value = '';
+        document.getElementById('groupNameInput').focus();
+    });
+
+    // Đóng modal tạo nhóm
+    function closeGroupModal() {
+        document.getElementById('createGroupModal').style.display = 'none';
+    }
+
+    // Lưu nhóm vào localStorage
+    function createGroup() {
+        const groupName = document.getElementById('groupNameInput').value.trim();
+        if (!groupName) {
+            alert('Vui lòng nhập tên nhóm!');
+            return;
+        }
+        let groups = JSON.parse(localStorage.getItem('chatGroups') || '[]');
+        if (groups.includes(groupName)) {
+            alert('Nhóm đã tồn tại!');
+            return;
+        }
+        groups.push(groupName);
+        localStorage.setItem('chatGroups', JSON.stringify(groups));
+        closeGroupModal();
+        loadGroups();
+    }
+
+    // Hiển thị nhóm ở sidebar
+    function loadGroups() {
+        let groups = JSON.parse(localStorage.getItem('chatGroups') || '[]');
+        const chatList = document.getElementById('chatList');
+        // Xóa nhóm cũ
+        chatList.querySelectorAll('.chat-group-item').forEach(e => e.remove());
+        groups.forEach(groupName => {
+            const groupItem = document.createElement('div');
+            groupItem.className = 'chat-item chat-group-item';
+            groupItem.onclick = function() {
+                document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
+                this.classList.add('active');
+                selectChat(groupName, true);
+            };
+
+            // Create elements for chat info and name
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            avatarDiv.style.background = 'linear-gradient(45deg,#ff9800,#f44336)';
+            avatarDiv.innerHTML = '<img src="https://cdn.vectorstock.com/i/500p/57/85/group-of-people-icon-vector-2855785.jpg" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
+
+            const chatInfoDiv = document.createElement('div');
+            chatInfoDiv.className = 'chat-info';
+
+            const chatNameDiv = document.createElement('div');
+            chatNameDiv.className = 'chat-name';
+            // Set the text content of the chat name using JavaScript
+            chatNameDiv.textContent = groupName || 'No group name set';
+
+            const chatPreviewDiv = document.createElement('div');
+            chatPreviewDiv.className = 'chat-preview';
+            chatPreviewDiv.textContent = 'Nhóm chat';
+
+            const chatMetaDiv = document.createElement('div');
+            chatMetaDiv.className = 'chat-meta';
+
+            chatInfoDiv.appendChild(chatNameDiv);
+            chatInfoDiv.appendChild(chatPreviewDiv);
+
+            groupItem.appendChild(avatarDiv);
+            groupItem.appendChild(chatInfoDiv);
+            groupItem.appendChild(chatMetaDiv);
+
+            chatList.prepend(groupItem); // Nhóm lên đầu
+        });
+    }
+
+    // Gọi khi load trang và sau khi tạo nhóm
+    window.addEventListener('DOMContentLoaded', loadGroups);
 </script>
 </body>
 </html>
